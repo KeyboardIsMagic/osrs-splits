@@ -1,4 +1,4 @@
-package com.example;
+package com.osrs_splits;
 
 import com.google.inject.Provides;
 import javax.inject.Inject;
@@ -16,24 +16,24 @@ import net.runelite.client.plugins.PluginDescriptor;
 @PluginDescriptor(
 	name = "Example"
 )
-public class ExamplePlugin extends Plugin
+public class OsrsSplitPlugin extends Plugin
 {
 	@Inject
 	private Client client;
 
 	@Inject
-	private ExampleConfig config;
+	private OsrsSplitsConfig config;
 
 	@Override
 	protected void startUp() throws Exception
 	{
-		log.info("Example started!");
+//		log.info("Example started!");
 	}
 
 	@Override
 	protected void shutDown() throws Exception
 	{
-		log.info("Example stopped!");
+//		log.info("Example stopped!");
 	}
 
 	@Subscribe
@@ -46,8 +46,8 @@ public class ExamplePlugin extends Plugin
 	}
 
 	@Provides
-	ExampleConfig provideConfig(ConfigManager configManager)
+	OsrsSplitsConfig provideConfig(ConfigManager configManager)
 	{
-		return configManager.getConfig(ExampleConfig.class);
+		return configManager.getConfig(OsrsSplitsConfig.class);
 	}
 }
