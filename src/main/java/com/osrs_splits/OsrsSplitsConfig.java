@@ -4,16 +4,27 @@ import net.runelite.client.config.Config;
 import net.runelite.client.config.ConfigGroup;
 import net.runelite.client.config.ConfigItem;
 
-@ConfigGroup("example")
+@ConfigGroup("OsrsSplit")
 public interface OsrsSplitsConfig extends Config
 {
 	@ConfigItem(
-		keyName = "greeting",
-		name = "Welcome Greeting",
-		description = "The message to show to the user when they login"
+			keyName = "partySizeLimit",
+			name = "Party Size Limit",
+			description = "Set the maximum number of players allowed in the party"
 	)
-	default String greeting()
+	default int partySizeLimit()
 	{
-		return "Hello";
+		return 4; // Default party size limit
 	}
+
+	@ConfigItem(
+			keyName = "screenshotOnConfirm",
+			name = "Screenshot on Confirm",
+			description = "Take a screenshot when all players confirm the split"
+	)
+	default boolean screenshotOnConfirm()
+	{
+		return true; // Enable screenshot on confirm by default
+	}
+
 }
