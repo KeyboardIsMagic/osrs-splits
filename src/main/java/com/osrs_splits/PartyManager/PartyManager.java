@@ -46,6 +46,7 @@ public class PartyManager
         return true;
     }
 
+
     public boolean updatePartySizeLimit(int newLimit)
     {
         if(newLimit < members.size())
@@ -120,8 +121,14 @@ public class PartyManager
         System.out.println("Party has been disbanded.");
     }
 
-    public boolean isLeader(String playerName)
-    {
-        return playerName.equals(leader);
+    public boolean isLeader(String playerName) {
+        return leader != null && leader.equals(playerName);
     }
+
+    public boolean isInParty(String playerName)
+    {
+        return members.containsKey(playerName);
+    }
+
+
 }

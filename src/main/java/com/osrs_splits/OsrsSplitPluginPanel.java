@@ -2,12 +2,30 @@ package com.osrs_splits;
 
 import com.osrs_splits.PartyManager.PartyManager;
 import com.osrs_splits.PartyManager.PlayerInfo;
+import net.runelite.api.ChatMessageType;
+import net.runelite.api.Item;
+import net.runelite.api.NPC;
+import net.runelite.client.chat.ChatMessageManager;
+import net.runelite.client.chat.QueuedMessage;
+import net.runelite.client.eventbus.Subscribe;
+import net.runelite.client.events.NpcLootReceived;
+import net.runelite.client.game.ItemStack;
 import net.runelite.client.ui.PluginPanel;
 
+import javax.imageio.ImageIO;
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import javax.swing.border.LineBorder;
 import java.awt.*;
+import java.awt.image.BufferedImage;
+import java.io.File;
+import java.io.IOException;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.Arrays;
 import java.util.Map;
 
 public class OsrsSplitPluginPanel extends PluginPanel
@@ -18,8 +36,13 @@ public class OsrsSplitPluginPanel extends PluginPanel
     private final JLabel passphraseLabel = new JLabel("Passphrase: N/A");
     private final JPanel memberListPanel = new JPanel();
     private final JButton screenshotButton = new JButton("Screenshot and Upload");
+    private Instant lastScreenshotTime = Instant.EPOCH;
 
     private final OsrsSplitPlugin plugin;
+    private static final int TARGET_NPC_ID = 3031; // goblin
+    private static final int[] SPECIAL_ITEM_IDS = {526}; // Bones item ID for testing
+
+
 
     public OsrsSplitPluginPanel(OsrsSplitPlugin plugin)
     {
@@ -67,7 +90,13 @@ public class OsrsSplitPluginPanel extends PluginPanel
         joinPartyButton.addActionListener(e -> joinParty());
         leavePartyButton.addActionListener(e -> leaveParty());
 
-        screenshotButton.addActionListener(e -> screenshotAndUpload()); // Action on click
+        screenshotButton.addActionListener(e -> {
+            screenshotButton.setEnabled(false); // Disable the button during execution
+            sendChatMessages(() -> attemptScreenshot(() -> screenshotButton.setEnabled(true))); // Re-enable after the screenshot
+        });
+
+
+
     }
 
     private void createParty()
@@ -223,8 +252,197 @@ public class OsrsSplitPluginPanel extends PluginPanel
         passphraseLabel.setText("Passphrase: " + passphrase);
     }
 
-    private void screenshotAndUpload()
+
+    private void sendChatMessages(Runnable afterMessagesSent)
     {
-        System.out.println("Screenshot taken and uploaded to Discord.");
+        ChatMessageManager chatMessageManager = plugin.getChatMessageManager();
+
+        // Send announcement in special text
+        chatMessageManager.queue(QueuedMessage.builder()
+                .type(ChatMessageType.GAMEMESSAGE)
+                .runeLiteFormattedMessage("<col=ff0000>*** Nex Splits Kodai ***</col>")
+                .build());
+
+        // Send normal messages for each party member
+        plugin.getPartyManager().getMembers().forEach((playerName, playerInfo) -> {
+            // Trim playerName and construct the message
+            playerName = playerName.trim();
+            String message = playerName + " Confirm split World " + playerInfo.getWorld();
+
+            // Queue the message
+            chatMessageManager.queue(QueuedMessage.builder()
+                    .type(ChatMessageType.PUBLICCHAT)
+                    .runeLiteFormattedMessage(message)
+                    .build());
+        });
+
+        // Add a delay before executing the screenshot logic
+        Timer delayTimer = new Timer(500, e -> afterMessagesSent.run()); // 1.5-second delay
+        delayTimer.setRepeats(false);
+        delayTimer.start();
+    }
+
+
+
+
+
+
+
+    ////////////////////////////////////////////////////////////////////////
+//                         SCREEN SHOTTING
+///////////////////////////////////////////////////////////////////////
+    private void attemptScreenshot(Runnable afterScreenshot)
+    {
+        try {
+            screenshotAndUpload();
+            showScreenshotNotification();
+        } catch (Exception e) {
+            e.printStackTrace();
+        } finally {
+            afterScreenshot.run(); // Re-enable the button
+        }
+    }
+
+
+// Display popup notification that screenshot was taken
+private void showScreenshotNotification()
+{
+    JOptionPane.showMessageDialog(this, "Screenshot taken and saved!", "Screenshot", JOptionPane.INFORMATION_MESSAGE);
+}
+private void screenshotAndUpload()
+{
+    try {
+        BufferedImage screenshot = captureScreenshot();
+        File screenshotFile = saveScreenshot(screenshot);
+        uploadToDiscord(screenshotFile);
+    } catch (IOException | AWTException e) {
+        e.printStackTrace();
     }
 }
+
+    private BufferedImage captureScreenshot() throws AWTException
+    {
+        // Obtain the RuneLite client window
+        Window clientWindow = SwingUtilities.getWindowAncestor(plugin.getClient().getCanvas());
+
+        if (clientWindow != null) {
+            // Capture only the RuneLite client area
+            Rectangle clientBounds = clientWindow.getBounds();
+            Robot robot = new Robot();
+            return robot.createScreenCapture(clientBounds);
+        } else {
+            System.out.println("Error: Unable to capture RuneLite client window.");
+            return null; // Return null if the client window is not found
+        }
+    }
+
+
+    // Save screenshot to a file
+    private File saveScreenshot(BufferedImage screenshot) throws IOException
+    {
+        // Define the directory path within the RuneLite directory
+        Path runeliteDir = Paths.get(System.getProperty("user.home"), ".runelite", "screenshots", "osrs_splits");
+        File screenshotDir = runeliteDir.toFile();
+
+        // Create the directory if it doesn't exist
+        if (!screenshotDir.exists()) {
+            screenshotDir.mkdirs();
+        }
+
+        // Create a unique filename based on the current date and time
+        String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
+        String filename = "screenshot_" + timestamp + ".png";
+
+        // Create the full path for the screenshot file
+        File screenshotFile = new File(screenshotDir, filename);
+
+        // Write the image to the specified path
+        ImageIO.write(screenshot, "png", screenshotFile);
+
+        System.out.println("Screenshot saved at: " + screenshotFile.getAbsolutePath()); // Debugging
+
+        return screenshotFile;
+    }
+
+
+    // Uploading to Discord
+    private void uploadToDiscord(File screenshotFile)
+    {
+        System.out.println("Uploading " + screenshotFile.getName() + " to Discord...");
+        // Discord API go here
+    }
+
+    // Drop detection
+    @Subscribe
+    public void onNpcLootReceived(NpcLootReceived event)
+    {
+        // Get the NPC from the event
+        NPC npc = event.getNpc();
+
+        // Check if the NPC is the target one
+        if (npc != null && npc.getId() == TARGET_NPC_ID)
+        {
+            System.out.println("Loot received from NPC ID: " + npc.getId());
+
+            // Check if the player is in a party
+            if (!plugin.getPartyManager().isInParty(plugin.getClient().getLocalPlayer().getName()))
+            {
+                System.out.println("Player is not in a party. No screenshot will be taken.");
+                return;
+            }
+
+            // Iterate over the loot items received
+            for (ItemStack itemStack : event.getItems())
+            {
+                System.out.println("Item received: " + itemStack.getId());
+
+                // Check if the item is unique drop
+                if (isSpecialItem(itemStack.getId()))
+                {
+                    System.out.println("Unique item drop detected from target NPC!");
+
+                    // Delay before taking the screenshot to allow the item to render on the ground
+                    new Thread(() -> {
+                        try
+                        {
+                            Thread.sleep(1000);
+
+                            //  Screenshot
+                            BufferedImage screenshot = captureScreenshot();
+                            File screenshotFile = saveScreenshot(screenshot);
+                            uploadToDiscord(screenshotFile);
+
+                            // Send notification to user
+                            SwingUtilities.invokeLater(() -> showScreenshotNotification("Screenshot taken and uploaded to Discord!"));
+
+                            System.out.println("Screenshot taken and uploaded after delay.");
+                        }
+                        catch (InterruptedException | IOException | AWTException e)
+                        {
+                            e.printStackTrace();
+                        }
+                    }).start();
+
+                    break; // Exit the loop after processing the first matching item
+                }
+            }
+        }
+    }
+
+
+    private void showScreenshotNotification(String message)
+    {
+        JOptionPane.showMessageDialog(this, message, "Screenshot Notification", JOptionPane.INFORMATION_MESSAGE);
+    }
+
+
+    private boolean isSpecialItem(int itemId) {
+        // Check if the item ID matches any of our special items
+        return Arrays.stream(SPECIAL_ITEM_IDS).anyMatch(id -> id == itemId);
+    }
+
+
+
+}
+
+
