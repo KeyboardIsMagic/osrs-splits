@@ -17,14 +17,5 @@ public interface OsrsSplitsConfig extends Config
 		return 4; // Default party size limit
 	}
 
-	@ConfigItem(
-			keyName = "screenshotOnConfirm",
-			name = "Screenshot on Confirm",
-			description = "Take a screenshot when all players confirm the split"
-	)
-	default boolean screenshotOnConfirm()
-	{
-		return true; // Enable screenshot on confirm by default
-	}
 
 }

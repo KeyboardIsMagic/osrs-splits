@@ -1,29 +1,28 @@
 package com.osrs_splits.PartyManager;
 
+import com.osrs_splits.OsrsSplitsConfig;
+import lombok.Getter;
+import lombok.Setter;
+
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.Map;
-import java.util.Set;
 
 public class PartyManager
 {
-    private static PartyManager instance;
-
+    @Getter
     private String leader;
-    private final int maxPartySize = 5;
+    private int dynamicPartySizeLimit;
+    @Getter
     private final Map<String, PlayerInfo> members = new HashMap<>();
 
-    // Singleton pattern for PartyManager instance
-    public static PartyManager getInstance()
-    {
-        if (instance == null)
-        {
-            instance = new PartyManager();
-        }
-        return instance;
-    }
+    private final OsrsSplitsConfig config;
 
-    private PartyManager() {}
+    // Constructor accepting OsrsSplitsConfig
+    public PartyManager(OsrsSplitsConfig config)
+    {
+        this.config = config;
+        this.dynamicPartySizeLimit = config.partySizeLimit();
+    }
 
     public boolean createParty(String leaderName)
     {
@@ -40,12 +39,25 @@ public class PartyManager
         }
 
         this.leader = leaderName;
-        PlayerInfo leaderInfo = new PlayerInfo(leaderName, 0, 0); // Set initial values
-        members.put(leaderName, leaderInfo);  // Add player info with placeholders
+        this.dynamicPartySizeLimit = config.partySizeLimit();
+        PlayerInfo leaderInfo = new PlayerInfo(leaderName, 0, 0);
+        members.put(leaderName, leaderInfo);
         System.out.println("Party created with leader: " + leaderName);
         return true;
     }
 
+    public boolean updatePartySizeLimit(int newLimit)
+    {
+        if(newLimit < members.size())
+        {
+            System.out.println("Party size must be greater than or equal to current party members");
+            return false;
+        }
+
+        this.dynamicPartySizeLimit = newLimit;
+        System.out.println("Party size limit updated to: " + newLimit);
+        return true;
+    }
 
     public void updatePlayerData(String playerName, int combatLevel, int world)
     {
@@ -58,9 +70,10 @@ public class PartyManager
         }
     }
 
-
     public boolean joinParty(String playerName, int combatLevel, int world)
     {
+        int maxPartySize = dynamicPartySizeLimit;
+
         if (this.leader == null)
         {
             System.out.println("No active party to join.");
@@ -111,11 +124,4 @@ public class PartyManager
     {
         return playerName.equals(leader);
     }
-
-    public Map<String, PlayerInfo> getMembers()
-    {
-        return members;
-    }
 }
-
-

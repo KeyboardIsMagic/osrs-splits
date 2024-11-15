@@ -1,10 +1,8 @@
 package com.osrs_splits;
 
 import com.google.inject.Provides;
-import javax.inject.Inject;
-import javax.swing.*;
-
 import com.osrs_splits.PartyManager.PartyManager;
+import lombok.Getter;
 import net.runelite.api.Client;
 import net.runelite.api.GameState;
 import net.runelite.api.events.GameStateChanged;
@@ -16,31 +14,43 @@ import net.runelite.client.plugins.PluginDescriptor;
 import net.runelite.client.ui.ClientToolbar;
 import net.runelite.client.ui.NavigationButton;
 import net.runelite.client.util.ImageUtil;
+
+import javax.inject.Inject;
 import java.awt.image.BufferedImage;
 
 @PluginDescriptor(
-		name = "0SRS Splits \"The Kodai\""
+		name = "1Nex Splits Kodai"
 )
 public class OsrsSplitPlugin extends Plugin
 {
+	@Getter
 	@Inject
-	Client client;
+	private Client client;
 
 	@Inject
 	private ClientToolbar clientToolbar;
 
+	@Inject
+	private OsrsSplitsConfig config;
+
 	private OsrsSplitPluginPanel panel;
 	private NavigationButton navButton;
+
+	@Getter
+	private PartyManager partyManager;
 
 	@Override
 	protected void startUp() throws Exception
 	{
+		// Initialize PartyManager with the config
+		partyManager = new PartyManager(config);
+
 		panel = new OsrsSplitPluginPanel(this);
 
 		final BufferedImage icon = ImageUtil.loadImageResource(getClass(), "/tempIcon.png");
 
 		navButton = NavigationButton.builder()
-				.tooltip("OSRS Splits")
+				.tooltip("Nex Splits Kodai")
 				.icon(icon)
 				.priority(1)
 				.panel(panel)
@@ -70,10 +80,10 @@ public class OsrsSplitPlugin extends Plugin
 			int combatLevel = client.getLocalPlayer().getCombatLevel();
 			int world = client.getWorld();
 
-			// Ensure player data is updated correctly on login
-			if (PartyManager.getInstance().isLeader(playerName))
+			// Use partyManager instead of PartyManager.getInstance()
+			if (partyManager.isLeader(playerName))
 			{
-				PartyManager.getInstance().updatePlayerData(playerName, combatLevel, world);
+				partyManager.updatePlayerData(playerName, combatLevel, world);
 				panel.updatePartyMembers();
 			}
 
@@ -89,8 +99,8 @@ public class OsrsSplitPlugin extends Plugin
 			String playerName = client.getLocalPlayer().getName();
 			int newWorld = client.getWorld();
 
-			// Update the player's world in PartyManager
-			PartyManager.getInstance().updatePlayerData(playerName, client.getLocalPlayer().getCombatLevel(), newWorld);
+			// Update the player's world in partyManager
+			partyManager.updatePlayerData(playerName, client.getLocalPlayer().getCombatLevel(), newWorld);
 
 			// Update the UI to reflect the new world
 			panel.updatePartyMembers();
@@ -104,7 +114,7 @@ public class OsrsSplitPlugin extends Plugin
 			String playerName = client.getLocalPlayer().getName();
 			int combatLevel = client.getLocalPlayer().getCombatLevel();
 			int world = client.getWorld();
-			PartyManager.getInstance().updatePlayerData(playerName, combatLevel, world);
+			partyManager.updatePlayerData(playerName, combatLevel, world); // Use partyManager
 			panel.updatePartyMembers();
 		}
 	}
