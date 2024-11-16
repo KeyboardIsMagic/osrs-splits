@@ -9,6 +9,7 @@ import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.WorldChanged;
 import net.runelite.client.chat.ChatMessageManager;
 import net.runelite.client.config.ConfigManager;
+import net.runelite.client.discord.DiscordService;
 import net.runelite.client.eventbus.EventBus;
 import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.plugins.Plugin;
@@ -16,6 +17,7 @@ import net.runelite.client.plugins.PluginDescriptor;
 import net.runelite.client.ui.ClientToolbar;
 import net.runelite.client.ui.NavigationButton;
 import net.runelite.client.util.ImageUtil;
+import net.runelite.discord.DiscordUser;
 
 import javax.inject.Inject;
 import java.awt.image.BufferedImage;
@@ -29,6 +31,10 @@ public class OsrsSplitPlugin extends Plugin
 	@Inject
 	private Client client;
 
+	@Getter
+	@Inject
+	private DiscordService discordService;
+
 	@Inject
 	private ClientToolbar clientToolbar;
 
@@ -36,7 +42,7 @@ public class OsrsSplitPlugin extends Plugin
 	private OsrsSplitsConfig config;
 
 	@Inject
-	private EventBus eventBus; // Injecting EventBus directly
+	private EventBus eventBus;
 	@Getter
 	@Inject
 	private ChatMessageManager chatMessageManager;
@@ -56,9 +62,14 @@ public class OsrsSplitPlugin extends Plugin
 		// Initialize the PluginPanel
 		panel = new OsrsSplitPluginPanel(this);
 
-		// Register the plugin itself and the panel to the EventBus
+		// Register the plugin  and the panel to the EventBus
 		eventBus.register(this);
 		eventBus.register(panel);
+
+		if (discordService != null)
+		{
+			discordService.init(); // Initialize the Discord service if its available
+		}
 
 		// Load the icon for the plugin
 		final BufferedImage icon = ImageUtil.loadImageResource(getClass(), "/tempIcon.png");
@@ -71,7 +82,7 @@ public class OsrsSplitPlugin extends Plugin
 				.panel(panel)
 				.build();
 
-		// Add the navigation button to the client toolbar
+		// Add navigation button to the client toolbar
 		clientToolbar.addNavigation(navButton);
 	}
 
@@ -135,4 +146,18 @@ public class OsrsSplitPlugin extends Plugin
 			panel.updatePartyMembers();
 		}
 	}
+
+
+	public boolean isDiscordVerified(String playerName)
+	{
+		if (discordService != null && discordService.getCurrentUser() != null)
+		{
+			DiscordUser currentUser = discordService.getCurrentUser();
+			return currentUser.username.equalsIgnoreCase(playerName); // FIX ME
+		}
+		return false;
+	}
+
+
+
 }

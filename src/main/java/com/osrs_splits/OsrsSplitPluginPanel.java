@@ -11,6 +11,7 @@ import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.events.NpcLootReceived;
 import net.runelite.client.game.ItemStack;
 import net.runelite.client.ui.PluginPanel;
+import net.runelite.discord.DiscordUser;
 
 import javax.imageio.ImageIO;
 import javax.swing.*;
@@ -84,15 +85,15 @@ public class OsrsSplitPluginPanel extends PluginPanel
 
         leavePartyButton.setVisible(false);
         passphraseLabel.setVisible(false);
-        screenshotButton.setVisible(false); // Initially hidden
+        screenshotButton.setVisible(false);
 
         createPartyButton.addActionListener(e -> createParty());
         joinPartyButton.addActionListener(e -> joinParty());
         leavePartyButton.addActionListener(e -> leaveParty());
 
         screenshotButton.addActionListener(e -> {
-            screenshotButton.setEnabled(false); // Disable the button during execution
-            sendChatMessages(() -> attemptScreenshot(() -> screenshotButton.setEnabled(true))); // Re-enable after the screenshot
+            screenshotButton.setEnabled(false);
+            sendChatMessages(() -> attemptScreenshot(() -> screenshotButton.setEnabled(true))); // Re-enable after screenshot
         });
 
 
@@ -113,7 +114,7 @@ public class OsrsSplitPluginPanel extends PluginPanel
                 plugin.getPartyManager().updatePlayerData(playerName, combatLevel, world);
                 updatePassphraseLabel(playerName);
                 enableLeaveParty();
-                screenshotButton.setVisible(true); // Show screenshot button when party is created
+                screenshotButton.setVisible(true);
                 JOptionPane.showMessageDialog(this, "Party created successfully with leader: " + playerName, "Party Created", JOptionPane.INFORMATION_MESSAGE);
                 updatePartyMembers();
             }
@@ -156,7 +157,7 @@ public class OsrsSplitPluginPanel extends PluginPanel
 
         leavePartyButton.setVisible(false);
         passphraseLabel.setVisible(false);
-        screenshotButton.setVisible(false); // Hide screenshot button when party is disbanded
+        screenshotButton.setVisible(false);
         memberListPanel.removeAll();
         memberListPanel.revalidate();
         memberListPanel.repaint();
@@ -195,45 +196,69 @@ public class OsrsSplitPluginPanel extends PluginPanel
 
         for (PlayerInfo player : members.values())
         {
-            JPanel playerPanel = new JPanel(new GridLayout(3, 2, 5, 2)); // Adjusted gap between cells
+            JPanel playerPanel = new JPanel(new GridBagLayout());
             playerPanel.setBorder(BorderFactory.createCompoundBorder(
-                    new LineBorder(Color.GRAY, 1, true), // Outer gray border
-                    new EmptyBorder(5, 10, 5, 10)        // Inner padding
+                    new LineBorder(Color.GRAY, 1, true),
+                    new EmptyBorder(2, 5, 2, 5)
             ));
+            GridBagConstraints gbc = new GridBagConstraints();
+            gbc.insets = new Insets(2, 5, 2, 5);
+            gbc.fill = GridBagConstraints.HORIZONTAL;
 
-            // Column 1 content
+            // Row 1: Name and World
+            gbc.gridx = 0;
+            gbc.gridy = 0;
+            gbc.weightx = 1.0;
             JLabel nameLabel = new JLabel(player.getName() + " (level-" + player.getCombatLevel() + ")");
+            playerPanel.add(nameLabel, gbc);
 
-            // Set the color of the world label based on world match with the leader
+            gbc.gridx = 1;
+            gbc.weightx = 1.0;
             JLabel worldLabel = new JLabel("World " + player.getWorld());
-            if (player.getWorld() == leaderWorld) {
-                worldLabel.setForeground(Color.GREEN); // Green if in the same world as the leader
-            } else {
-                worldLabel.setForeground(Color.RED); // Red if in a different world
-            }
+            worldLabel.setForeground(player.getWorld() == leaderWorld ? Color.GREEN : Color.RED);
+            playerPanel.add(worldLabel, gbc);
 
+            // Row 2: Discord and Verification Status
+            gbc.gridx = 0;
+            gbc.gridy = 1;
+            gbc.weightx = 1.0;
+            JLabel discordLabel = new JLabel("Discord Verification:");
+            discordLabel.setHorizontalAlignment(SwingConstants.CENTER);
+            playerPanel.add(discordLabel, gbc);
+
+            gbc.gridx = 1;
+            gbc.weightx = 1.0;
+            JLabel verificationLabel = new JLabel();
+            if (plugin.isDiscordVerified(player.getName()))
+            {
+                verificationLabel.setText("Verified");
+                verificationLabel.setForeground(Color.GREEN);
+            }
+            else
+            {
+                verificationLabel.setText("Not Verified");
+                verificationLabel.setForeground(Color.RED);
+            }
+            verificationLabel.setHorizontalAlignment(SwingConstants.CENTER);
+            playerPanel.add(verificationLabel, gbc);
+
+            // Row 3: Confirm Split Button, Yes/No
+            gbc.gridx = 0;
+            gbc.gridy = 2;
+            gbc.weightx = 0.5;
             JButton confirmButton = new JButton("Confirm Split");
-            confirmButton.setPreferredSize(new Dimension(90, 20));
-            confirmButton.setForeground(Color.LIGHT_GRAY); // Normal button text color
-            confirmButton.setContentAreaFilled(true); // Standard button background
-            confirmButton.setBorder(BorderFactory.createLineBorder(Color.GRAY));
+            confirmButton.setPreferredSize(new Dimension(110, 20));
             confirmButton.addActionListener(e -> {
                 player.setConfirmedSplit(true);
-                updatePartyMembers(); // Refresh to show the updated status
+                updatePartyMembers();
             });
+            playerPanel.add(confirmButton, gbc);
 
-            // Column 2 content with right alignment for confirmation status
-            JLabel confirmationStatus = new JLabel(player.isConfirmedSplit() ? "Yes" : "No", SwingConstants.RIGHT);
+            gbc.gridx = 1;
+            gbc.weightx = 0.5;
+            JLabel confirmationStatus = new JLabel(player.isConfirmedSplit() ? "Yes" : "No", SwingConstants.LEFT);
             confirmationStatus.setForeground(player.isConfirmedSplit() ? Color.GREEN : Color.RED);
-            confirmationStatus.setHorizontalAlignment(SwingConstants.CENTER);
-
-            // Add elements to the grid with inner padding and adjusted spacing
-            playerPanel.add(nameLabel);
-            playerPanel.add(new JLabel("")); // Empty cell for alignment
-            playerPanel.add(worldLabel);
-            playerPanel.add(new JLabel("")); // Empty cell for alignment
-            playerPanel.add(confirmButton);
-            playerPanel.add(confirmationStatus); // Confirmation status text in bottom-right
+            playerPanel.add(confirmationStatus, gbc);
 
             memberListPanel.add(playerPanel);
 
@@ -247,6 +272,9 @@ public class OsrsSplitPluginPanel extends PluginPanel
         screenshotButton.setEnabled(allConfirmed && sameWorld);
     }
 
+
+
+
     public void updatePassphraseLabel(String passphrase)
     {
         passphraseLabel.setText("Passphrase: " + passphrase);
@@ -257,7 +285,7 @@ public class OsrsSplitPluginPanel extends PluginPanel
     {
         ChatMessageManager chatMessageManager = plugin.getChatMessageManager();
 
-        // Send announcement in special text
+        // Send announcement
         chatMessageManager.queue(QueuedMessage.builder()
                 .type(ChatMessageType.GAMEMESSAGE)
                 .runeLiteFormattedMessage("<col=ff0000>*** Nex Splits Kodai ***</col>")
@@ -265,30 +293,25 @@ public class OsrsSplitPluginPanel extends PluginPanel
 
         // Send normal messages for each party member
         plugin.getPartyManager().getMembers().forEach((playerName, playerInfo) -> {
-            // Trim playerName and construct the message
             playerName = playerName.trim();
             String message = playerName + " Confirm split World " + playerInfo.getWorld();
 
-            // Queue the message
+            // Queue messages
             chatMessageManager.queue(QueuedMessage.builder()
                     .type(ChatMessageType.PUBLICCHAT)
                     .runeLiteFormattedMessage(message)
                     .build());
         });
 
-        // Add a delay before executing the screenshot logic
-        Timer delayTimer = new Timer(500, e -> afterMessagesSent.run()); // 1.5-second delay
+        // delay
+        Timer delayTimer = new Timer(500, e -> afterMessagesSent.run());
         delayTimer.setRepeats(false);
         delayTimer.start();
     }
 
 
 
-
-
-
-
-    ////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////
 //                         SCREEN SHOTTING
 ///////////////////////////////////////////////////////////////////////
     private void attemptScreenshot(Runnable afterScreenshot)
@@ -299,12 +322,12 @@ public class OsrsSplitPluginPanel extends PluginPanel
         } catch (Exception e) {
             e.printStackTrace();
         } finally {
-            afterScreenshot.run(); // Re-enable the button
+            afterScreenshot.run(); // Re-enable button
         }
     }
 
 
-// Display popup notification that screenshot was taken
+// popup notification
 private void showScreenshotNotification()
 {
     JOptionPane.showMessageDialog(this, "Screenshot taken and saved!", "Screenshot", JOptionPane.INFORMATION_MESSAGE);
@@ -322,34 +345,34 @@ private void screenshotAndUpload()
 
     private BufferedImage captureScreenshot() throws AWTException
     {
-        // Obtain the RuneLite client window
+        // Runelite client window
         Window clientWindow = SwingUtilities.getWindowAncestor(plugin.getClient().getCanvas());
 
         if (clientWindow != null) {
-            // Capture only the RuneLite client area
+            // Capture Runelite only
             Rectangle clientBounds = clientWindow.getBounds();
             Robot robot = new Robot();
             return robot.createScreenCapture(clientBounds);
         } else {
             System.out.println("Error: Unable to capture RuneLite client window.");
-            return null; // Return null if the client window is not found
+            return null;
         }
     }
 
 
-    // Save screenshot to a file
+
     private File saveScreenshot(BufferedImage screenshot) throws IOException
     {
-        // Define the directory path within the RuneLite directory
+        // directory path within Runelite dir
         Path runeliteDir = Paths.get(System.getProperty("user.home"), ".runelite", "screenshots", "osrs_splits");
         File screenshotDir = runeliteDir.toFile();
 
-        // Create the directory if it doesn't exist
+        // Create the dir if DNE
         if (!screenshotDir.exists()) {
             screenshotDir.mkdirs();
         }
 
-        // Create a unique filename based on the current date and time
+        // Naming convention
         String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
         String filename = "screenshot_" + timestamp + ".png";
 
@@ -359,7 +382,7 @@ private void screenshotAndUpload()
         // Write the image to the specified path
         ImageIO.write(screenshot, "png", screenshotFile);
 
-        System.out.println("Screenshot saved at: " + screenshotFile.getAbsolutePath()); // Debugging
+        System.out.println("Screenshot saved at: " + screenshotFile.getAbsolutePath()); // Debug
 
         return screenshotFile;
     }
@@ -376,10 +399,10 @@ private void screenshotAndUpload()
     @Subscribe
     public void onNpcLootReceived(NpcLootReceived event)
     {
-        // Get the NPC from the event
+        // Get the NPC from event
         NPC npc = event.getNpc();
 
-        // Check if the NPC is the target one
+        // Check if the NPC is the target
         if (npc != null && npc.getId() == TARGET_NPC_ID)
         {
             System.out.println("Loot received from NPC ID: " + npc.getId());
