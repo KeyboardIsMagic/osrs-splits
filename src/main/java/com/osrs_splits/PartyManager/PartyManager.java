@@ -1,30 +1,36 @@
 package com.osrs_splits.PartyManager;
 
+import com.Utils.PlayerVerificationStatus;
+import com.osrs_splits.OsrsSplitPlugin;
 import com.osrs_splits.OsrsSplitsConfig;
 import lombok.Getter;
 import lombok.Setter;
 
 import java.util.HashMap;
 import java.util.Map;
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
 
 public class PartyManager
 {
     @Getter
     private String leader;
-    private int dynamicPartySizeLimit;
+
     @Getter
     private final Map<String, PlayerInfo> members = new HashMap<>();
+    private final OsrsSplitPlugin plugin;
 
     private final OsrsSplitsConfig config;
 
     // Constructor accepting OsrsSplitsConfig
-    public PartyManager(OsrsSplitsConfig config)
+    public PartyManager(OsrsSplitsConfig config, OsrsSplitPlugin plugin)
     {
         this.config = config;
-        this.dynamicPartySizeLimit = config.partySizeLimit();
+        this.plugin = plugin;
     }
 
-    public boolean createParty(String leaderName)
+    public boolean createParty(String leaderName, int rank)
     {
         if (this.leader != null)
         {
@@ -39,41 +45,67 @@ public class PartyManager
         }
 
         this.leader = leaderName;
-        this.dynamicPartySizeLimit = config.partySizeLimit();
-        PlayerInfo leaderInfo = new PlayerInfo(leaderName, 0, 0);
-        members.put(leaderName, leaderInfo);
+        members.put(leaderName, new PlayerInfo(leaderName, rank, plugin.getClient().getWorld()));
         System.out.println("Party created with leader: " + leaderName);
         return true;
     }
 
 
-    public boolean updatePartySizeLimit(int newLimit)
-    {
-        if(newLimit < members.size())
-        {
-            System.out.println("Party size must be greater than or equal to current party members");
-            return false;
-        }
-
-        this.dynamicPartySizeLimit = newLimit;
-        System.out.println("Party size limit updated to: " + newLimit);
-        return true;
+    public void updatePlayerData(String playerName, int world) {
+        PlayerVerificationStatus status = plugin.getPlayerVerificationStatus(plugin.getConfig().apiKey());
+        updatePlayerData(playerName, world, status);
     }
 
-    public void updatePlayerData(String playerName, int combatLevel, int world)
-    {
+    public void updatePlayerData(String playerName, int world, PlayerVerificationStatus status) {
         PlayerInfo player = members.get(playerName);
-        if (player != null)
-        {
-            player.setCombatLevel(combatLevel);
+
+        if (player != null) {
             player.setWorld(world);
+            player.setVerified(status.isVerified());
+            player.setRank(status.getRank());
+            player.setConfirmedSplit(false); // Reset confirmation on world change
             System.out.println("Updated player data for: " + playerName);
         }
     }
 
-    public boolean joinParty(String playerName, int combatLevel, int world)
+
+
+    public void processWebSocketMessage(String message) {
+        try {
+            JSONObject json = new JSONObject(message);
+            String action = json.getString("action");
+
+            if ("party_update".equals(action)) {
+                JSONArray members = json.getJSONArray("members");
+                clearMembers();
+
+                for (int i = 0; i < members.length(); i++) {
+                    JSONObject member = members.getJSONObject(i);
+                    PlayerInfo player = new PlayerInfo(
+                            member.getString("name"),
+                            member.getInt("world"),
+                            member.getInt("rank")
+                    );
+                    player.setVerified(member.getBoolean("verified"));
+                    player.setConfirmedSplit(member.getBoolean("confirmedSplit"));
+                    addMember(player);
+                }
+
+                System.out.println("Party updated: " + members);
+                plugin.getOsrsSplitPluginPanel().updatePartyMembers();
+            }
+        } catch (JSONException e) {
+            e.printStackTrace();
+        }
+    }
+
+
+
+
+
+    public boolean joinParty(String playerName, int world, int rank) // Rank added
     {
-        int maxPartySize = dynamicPartySizeLimit;
+
 
         if (this.leader == null)
         {
@@ -81,11 +113,6 @@ public class PartyManager
             return false;
         }
 
-        if (members.size() >= maxPartySize)
-        {
-            System.out.println("Party is full.");
-            return false;
-        }
 
         if (members.containsKey(playerName))
         {
@@ -93,9 +120,9 @@ public class PartyManager
             return false;
         }
 
-        PlayerInfo player = new PlayerInfo(playerName, combatLevel, world);
+        PlayerInfo player = new PlayerInfo(playerName, world, rank);
         members.put(playerName, player);
-        System.out.println(playerName + " has joined the party.");
+        System.out.println(playerName + " (Rank " + rank + ") has joined the party.");
         return true;
     }
 
@@ -128,6 +155,22 @@ public class PartyManager
     public boolean isInParty(String playerName)
     {
         return members.containsKey(playerName);
+    }
+
+
+    public void clearMembers() {
+        members.clear();
+        System.out.println("All members have been cleared from the party.");
+    }
+
+
+    public void addMember(PlayerInfo playerInfo) {
+        if (!members.containsKey(playerInfo.getName())) {
+            members.put(playerInfo.getName(), playerInfo);
+            System.out.println("Member added: " + playerInfo.getName());
+        } else {
+            System.out.println("Member already exists: " + playerInfo.getName());
+        }
     }
 
 

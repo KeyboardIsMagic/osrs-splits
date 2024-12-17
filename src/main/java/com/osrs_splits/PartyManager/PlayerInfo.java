@@ -4,23 +4,24 @@ import lombok.Getter;
 import lombok.Setter;
 
 @Getter
-public class PlayerInfo
-{
-    private String name;
-    @Setter
-    private int combatLevel;
+public class PlayerInfo {
+    private final String name;
     @Setter
     private int world;
     @Setter
+    private int rank;
+    @Setter
+    private boolean verified;
+    @Setter
     private boolean confirmedSplit;
 
-    public PlayerInfo(String name, int combatLevel, int world)
-    {
+    public PlayerInfo(String name, int world, int rank) {
         this.name = name;
-        this.combatLevel = combatLevel;
         this.world = world;
+        this.rank = rank;
+        this.verified = false;
         this.confirmedSplit = false;
     }
-
-
 }
+
+

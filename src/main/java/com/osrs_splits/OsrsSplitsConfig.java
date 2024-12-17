@@ -8,14 +8,13 @@ import net.runelite.client.config.ConfigItem;
 public interface OsrsSplitsConfig extends Config
 {
 	@ConfigItem(
-			keyName = "partySizeLimit",
-			name = "Party Size Limit",
-			description = "Set the maximum number of players allowed in the party"
+			keyName = "apiKey",
+			name = "API Key",
+			description = "Enter your API key here (hidden for security)",
+			secret = true
 	)
-	default int partySizeLimit()
+	default String apiKey()
 	{
-		return 4; // Default party size limit
+		return "";
 	}
-
-
 }

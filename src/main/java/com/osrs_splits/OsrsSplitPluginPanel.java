@@ -1,5 +1,7 @@
 package com.osrs_splits;
 
+import com.Utils.HttpUtil;
+import com.Utils.PlayerVerificationStatus;
 import com.osrs_splits.PartyManager.PartyManager;
 import com.osrs_splits.PartyManager.PlayerInfo;
 import net.runelite.api.ChatMessageType;
@@ -12,6 +14,8 @@ import net.runelite.client.events.NpcLootReceived;
 import net.runelite.client.game.ItemStack;
 import net.runelite.client.ui.PluginPanel;
 import net.runelite.discord.DiscordUser;
+import org.json.JSONArray;
+import org.json.JSONObject;
 
 import javax.imageio.ImageIO;
 import javax.swing.*;
@@ -37,6 +41,8 @@ public class OsrsSplitPluginPanel extends PluginPanel
     private final JLabel passphraseLabel = new JLabel("Passphrase: N/A");
     private final JPanel memberListPanel = new JPanel();
     private final JButton screenshotButton = new JButton("Screenshot and Upload");
+    private final JTextField apiKeyField = new JPasswordField(20);
+    private final JButton saveApiKeyButton = new JButton("Save");
     private Instant lastScreenshotTime = Instant.EPOCH;
 
     private final OsrsSplitPlugin plugin;
@@ -100,69 +106,247 @@ public class OsrsSplitPluginPanel extends PluginPanel
 
     }
 
-    private void createParty()
-    {
-        if (plugin.getClient().getLocalPlayer() != null)
-        {
-            String playerName = plugin.getClient().getLocalPlayer().getName();
-            int combatLevel = plugin.getClient().getLocalPlayer().getCombatLevel();
-            int world = plugin.getClient().getWorld();
+    private void createParty() {
+        if (plugin.getClient().getLocalPlayer() == null) {
+            showLoginWarning();
+            return;
+        }
 
-            boolean success = plugin.getPartyManager().createParty(playerName);
-            if (success)
-            {
-                plugin.getPartyManager().updatePlayerData(playerName, combatLevel, world);
-                updatePassphraseLabel(playerName);
+        String playerName = plugin.getClient().getLocalPlayer().getName();
+        int world = plugin.getClient().getWorld();
+
+        // Check if already in a party
+        if (plugin.getPartyManager().isInParty(playerName)) {
+            JOptionPane.showMessageDialog(this, "You are already in a party.", "Error", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        // Prompt for passphrase
+        String passphrase = JOptionPane.showInputDialog(this, "Enter a passphrase for your party:");
+        if (passphrase == null || passphrase.trim().isEmpty()) {
+            JOptionPane.showMessageDialog(this, "Passphrase cannot be empty.", "Error", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        SwingWorker<Void, Void> worker = new SwingWorker<>() {
+            private boolean partyCreated = false;
+
+            @Override
+            protected Void doInBackground() {
+                try {
+                    // Send party creation request
+                    JSONObject payload = new JSONObject();
+                    payload.put("passphrase", passphrase);
+                    payload.put("rsn", playerName);
+
+                    String response = HttpUtil.postRequest(plugin.getApiUrl() + "/create-party", payload.toString());
+                    JSONObject jsonResponse = new JSONObject(response);
+
+                    if (jsonResponse.has("error")) {
+                        throw new Exception(jsonResponse.getString("error"));
+                    }
+
+                    // Create the party locally
+                    partyCreated = plugin.getPartyManager().createParty(playerName, 0);
+                    if (partyCreated) {
+                        plugin.getPartyManager().updatePlayerData(playerName, world);
+                    }
+                } catch (Exception e) {
+                    e.printStackTrace();
+                    JOptionPane.showMessageDialog(OsrsSplitPluginPanel.this, "Failed to create party: " + e.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+                }
+                return null;
+            }
+
+            @Override
+            protected void done() {
+                if (partyCreated) {
+                    updatePassphraseLabel(passphrase);
+                    enableLeaveParty();
+                    screenshotButton.setVisible(true);
+
+                    // Ensure WebSocket is connected
+                    if (!plugin.getWebSocketClient().isOpen()) {
+                        new Thread(() -> {
+                            try {
+                                plugin.getWebSocketClient().reconnect();
+                                SwingUtilities.invokeLater(() -> {
+                                    System.out.println("WebSocket reconnected successfully.");
+                                });
+                            } catch (Exception e) {
+                                SwingUtilities.invokeLater(() -> {
+                                    JOptionPane.showMessageDialog(OsrsSplitPluginPanel.this,
+                                            "WebSocket reconnection failed: " + e.getMessage(),
+                                            "WebSocket Error", JOptionPane.ERROR_MESSAGE);
+                                });
+                            }
+                        }).start();
+                    }
+
+
+                    // Broadcast the update
+                    JSONObject updatePayload = new JSONObject();
+                    updatePayload.put("action", "party_update");
+                    updatePayload.put("passphrase", passphrase);
+                    updatePayload.put("members", new JSONArray(plugin.getPartyManager().getMembers().keySet()));
+
+                    plugin.getWebSocketClient().send(updatePayload.toString());
+
+                    // Immediately add leader's card to the UI
+                    updatePartyMembers();
+                }
+            }
+        };
+
+        worker.execute();
+    }
+
+
+
+
+    private void joinParty() {
+        if (plugin.getClient().getLocalPlayer() == null) {
+            showLoginWarning();
+            return;
+        }
+
+        // Prompt for passphrase
+        String passphrase = JOptionPane.showInputDialog(this, "Enter the passphrase of the party to join:");
+        if (passphrase == null || passphrase.trim().isEmpty()) {
+            JOptionPane.showMessageDialog(this, "Passphrase cannot be empty.", "Error", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        String playerName = plugin.getClient().getLocalPlayer().getName();
+        int world = plugin.getClient().getWorld();
+
+        // Check if player is already in a party
+        if (plugin.getPartyManager().isInParty(playerName)) {
+            JOptionPane.showMessageDialog(this, "You are already in a party. Leave the current party first.", "Error", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        SwingWorker<Void, Void> worker = new SwingWorker<>() {
+            @Override
+            protected Void doInBackground() {
+                try {
+                    // Send join-party request to the API
+                    JSONObject payload = new JSONObject();
+                    payload.put("passphrase", passphrase);
+                    payload.put("rsn", playerName);
+
+                    String response = HttpUtil.postRequest(plugin.getApiUrl() + "/join-party", payload.toString());
+                    JSONObject jsonResponse = new JSONObject(response);
+
+                    if (jsonResponse.has("error")) {
+                        throw new Exception(jsonResponse.getString("error"));
+                    }
+
+                    // Fetch updated party data
+                    JSONObject partyData = jsonResponse.getJSONObject("party");
+                    JSONArray members = partyData.getJSONArray("members");
+
+                    // Update PartyManager locally
+                    plugin.getPartyManager().createParty(partyData.getString("leader"), 0);
+                    for (int i = 0; i < members.length(); i++) {
+                        String memberName = members.getString(i);
+                        plugin.getPartyManager().addMember(new PlayerInfo(memberName, world, 0)); // Actual world and rank
+                    }
+                } catch (Exception e) {
+                    e.printStackTrace();
+                    JOptionPane.showMessageDialog(OsrsSplitPluginPanel.this, "Failed to join party: " + e.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+                }
+                return null;
+            }
+
+
+            @Override
+            protected void done() {
+                // Update UI
+                updatePassphraseLabel(passphrase);
                 enableLeaveParty();
                 screenshotButton.setVisible(true);
-                JOptionPane.showMessageDialog(this, "Party created successfully with leader: " + playerName, "Party Created", JOptionPane.INFORMATION_MESSAGE);
                 updatePartyMembers();
+
+                JOptionPane.showMessageDialog(
+                        OsrsSplitPluginPanel.this,
+                        "Joined the party successfully!",
+                        "Success",
+                        JOptionPane.INFORMATION_MESSAGE
+                );
             }
-        }
-        else
-        {
+        };
+
+        worker.execute();
+    }
+
+
+
+
+
+
+    private void leaveParty() {
+        if (plugin.getClient().getLocalPlayer() == null) {
             showLoginWarning();
+            return;
         }
-    }
 
-    private void joinParty()
-    {
-        if (plugin.getClient().getLocalPlayer() != null)
-        {
-            String playerName = plugin.getClient().getLocalPlayer().getName();
-            int combatLevel = plugin.getClient().getLocalPlayer().getCombatLevel();
-            int world = plugin.getClient().getWorld();
+        String playerName = plugin.getClient().getLocalPlayer().getName();
+        String passphrase = passphraseLabel.getText().replace("Passphrase: ", "").trim(); // Extract the passphrase
 
-            boolean success = plugin.getPartyManager().joinParty(playerName, combatLevel, world);
-            if (success)
-            {
-                JOptionPane.showMessageDialog(this, "Joined the party successfully!", "Party Joined", JOptionPane.INFORMATION_MESSAGE);
-                disableJoinParty();
-                updatePartyMembers();
+        if (passphrase.isEmpty()) {
+            JOptionPane.showMessageDialog(this, "No active party to leave.", "Error", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        // Use SwingWorker for asynchronous execution
+        SwingWorker<Void, Void> worker = new SwingWorker<>() {
+            @Override
+            protected Void doInBackground() {
+                try {
+                    // Send leave-party request to the API
+                    JSONObject payload = new JSONObject();
+                    payload.put("passphrase", passphrase);
+                    payload.put("rsn", playerName);
+
+                    HttpUtil.postRequest(plugin.getApiUrl() + "/leave-party", payload.toString());
+                    System.out.println("Sent leave-party request for player: " + playerName);
+                } catch (Exception e) {
+                    e.printStackTrace();
+                    JOptionPane.showMessageDialog(
+                            OsrsSplitPluginPanel.this,
+                            "Failed to leave party: " + e.getMessage(),
+                            "Error",
+                            JOptionPane.ERROR_MESSAGE
+                    );
+                }
+                return null;
             }
-            else
-            {
-                showJoinFailure();
+
+            @Override
+            protected void done() {
+                // Update client UI
+                plugin.getPartyManager().leaveParty(playerName);
+                leavePartyButton.setVisible(false);
+                passphraseLabel.setVisible(false);
+                screenshotButton.setVisible(false);
+                memberListPanel.removeAll();
+                memberListPanel.revalidate();
+                memberListPanel.repaint();
+                joinPartyButton.setEnabled(true);
+
+                JOptionPane.showMessageDialog(
+                        OsrsSplitPluginPanel.this,
+                        "You have left the party.",
+                        "Party Left",
+                        JOptionPane.INFORMATION_MESSAGE
+                );
             }
-        }
+        };
+
+        worker.execute(); // Start the SwingWorker
     }
 
-    private void leaveParty()
-    {
-        if (plugin.getClient().getLocalPlayer() != null)
-        {
-            String playerName = plugin.getClient().getLocalPlayer().getName();
-            plugin.getPartyManager().leaveParty(playerName);
-        }
-
-        leavePartyButton.setVisible(false);
-        passphraseLabel.setVisible(false);
-        screenshotButton.setVisible(false);
-        memberListPanel.removeAll();
-        memberListPanel.revalidate();
-        memberListPanel.repaint();
-        joinPartyButton.setEnabled(true);
-    }
 
     public void enableLeaveParty()
     {
@@ -186,16 +370,23 @@ public class OsrsSplitPluginPanel extends PluginPanel
         JOptionPane.showMessageDialog(this, "Could not join the party. It may be full or not exist.", "Join Failed", JOptionPane.WARNING_MESSAGE);
     }
 
-    void updatePartyMembers()
-    {
+    public void updatePartyMembers() {
         memberListPanel.removeAll();
-        Map<String, PlayerInfo> members = plugin.getPartyManager().getMembers();
-        boolean allConfirmed = true;
-        boolean sameWorld = true;
-        int leaderWorld = members.get(plugin.getPartyManager().getLeader()).getWorld();
 
-        for (PlayerInfo player : members.values())
-        {
+        Map<String, PlayerInfo> members = plugin.getPartyManager().getMembers();
+        if (members.isEmpty()) {
+            JLabel noMembersLabel = new JLabel("No members in the party.");
+            noMembersLabel.setHorizontalAlignment(SwingConstants.CENTER);
+            memberListPanel.add(noMembersLabel);
+            memberListPanel.revalidate();
+            memberListPanel.repaint();
+            return;
+        }
+
+        String leader = plugin.getPartyManager().getLeader();
+        String currentPlayer = plugin.getClient().getLocalPlayer().getName();
+
+        for (PlayerInfo player : members.values()) {
             JPanel playerPanel = new JPanel(new GridBagLayout());
             playerPanel.setBorder(BorderFactory.createCompoundBorder(
                     new LineBorder(Color.GRAY, 1, true),
@@ -205,72 +396,166 @@ public class OsrsSplitPluginPanel extends PluginPanel
             gbc.insets = new Insets(2, 5, 2, 5);
             gbc.fill = GridBagConstraints.HORIZONTAL;
 
-            // Row 1: Name and World
+            // Row 1: Name and Leader Indicator
             gbc.gridx = 0;
             gbc.gridy = 0;
-            gbc.weightx = 1.0;
-            JLabel nameLabel = new JLabel(player.getName() + " (level-" + player.getCombatLevel() + ")");
+            String displayName = player.getName();
+            if (player.getName().equals(leader)) {
+                displayName += " (Leader)";
+            }
+            JLabel nameLabel = new JLabel(displayName);
+            nameLabel.setForeground(player.getName().equals(leader) ? Color.BLUE : Color.BLACK);
             playerPanel.add(nameLabel, gbc);
 
-            gbc.gridx = 1;
-            gbc.weightx = 1.0;
+            // Row 2: World and Verification Status
+            gbc.gridy = 1;
             JLabel worldLabel = new JLabel("World " + player.getWorld());
-            worldLabel.setForeground(player.getWorld() == leaderWorld ? Color.GREEN : Color.RED);
+            worldLabel.setForeground(player.getWorld() == plugin.getClient().getWorld() ? Color.GREEN : Color.RED);
             playerPanel.add(worldLabel, gbc);
 
-            // Row 2: Discord and Verification Status
-            gbc.gridx = 0;
-            gbc.gridy = 1;
-            gbc.weightx = 1.0;
-            JLabel discordLabel = new JLabel("Discord Verification:");
-            discordLabel.setHorizontalAlignment(SwingConstants.CENTER);
-            playerPanel.add(discordLabel, gbc);
-
             gbc.gridx = 1;
-            gbc.weightx = 1.0;
-            JLabel verificationLabel = new JLabel();
-            if (plugin.isDiscordVerified(player.getName()))
-            {
-                verificationLabel.setText("Verified");
-                verificationLabel.setForeground(Color.GREEN);
-            }
-            else
-            {
-                verificationLabel.setText("Not Verified");
-                verificationLabel.setForeground(Color.RED);
-            }
-            verificationLabel.setHorizontalAlignment(SwingConstants.CENTER);
+            JLabel verificationLabel = new JLabel(player.isVerified() ? "Verified" : "Not Verified");
+            verificationLabel.setForeground(player.isVerified() ? Color.GREEN : Color.RED);
             playerPanel.add(verificationLabel, gbc);
 
-            // Row 3: Confirm Split Button, Yes/No
-            gbc.gridx = 0;
+            // Row 3: Split Confirmation Status
             gbc.gridy = 2;
-            gbc.weightx = 0.5;
-            JButton confirmButton = new JButton("Confirm Split");
-            confirmButton.setPreferredSize(new Dimension(110, 20));
-            confirmButton.addActionListener(e -> {
-                player.setConfirmedSplit(true);
-                updatePartyMembers();
-            });
-            playerPanel.add(confirmButton, gbc);
+            gbc.gridx = 0;
+            JLabel splitLabel = new JLabel(player.isConfirmedSplit() ? "Split Confirmed" : "Split Pending");
+            splitLabel.setForeground(player.isConfirmedSplit() ? Color.GREEN : Color.RED);
+            playerPanel.add(splitLabel, gbc);
 
-            gbc.gridx = 1;
-            gbc.weightx = 0.5;
-            JLabel confirmationStatus = new JLabel(player.isConfirmedSplit() ? "Yes" : "No", SwingConstants.LEFT);
-            confirmationStatus.setForeground(player.isConfirmedSplit() ? Color.GREEN : Color.RED);
-            playerPanel.add(confirmationStatus, gbc);
+            // Confirm Split Button for the Current Player
+            if (player.getName().equals(currentPlayer) && !player.isConfirmedSplit()) {
+                JButton confirmButton = new JButton("Confirm Split");
+                confirmButton.addActionListener(e -> {
+                    player.setConfirmedSplit(true);
+
+                    // Broadcast updated party data
+                    sendPartyUpdate();
+                    updatePartyMembers();
+                });
+
+                playerPanel.add(confirmButton, gbc);
+            }
 
             memberListPanel.add(playerPanel);
-
-            if (!player.isConfirmedSplit()) allConfirmed = false;
-            if (player.getWorld() != leaderWorld) sameWorld = false;
         }
 
         memberListPanel.revalidate();
         memberListPanel.repaint();
-
-        screenshotButton.setEnabled(allConfirmed && sameWorld);
     }
+
+
+
+    private JPanel createPlayerPanel(PlayerInfo player, String currentPlayer, String leader) {
+        JPanel panel = new JPanel(new GridBagLayout());
+        panel.setBorder(BorderFactory.createCompoundBorder(new LineBorder(Color.GRAY, 1, true), new EmptyBorder(2, 5, 2, 5)));
+
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.insets = new Insets(2, 5, 2, 5);
+
+        // Name and Leader Status
+        gbc.gridx = 0;
+        gbc.gridy = 0;
+        JLabel nameLabel = new JLabel(player.getName() + (player.getName().equals(leader) ? " (Leader)" : ""));
+        nameLabel.setForeground(player.getName().equals(leader) ? Color.BLUE : Color.BLACK);
+        panel.add(nameLabel, gbc);
+
+        // World Label
+        gbc.gridy = 1;
+        JLabel worldLabel = new JLabel("World " + player.getWorld());
+        worldLabel.setForeground(player.getWorld() == plugin.getClient().getWorld() ? Color.GREEN : Color.RED);
+        panel.add(worldLabel, gbc);
+
+        // Verification Status
+        gbc.gridx = 1;
+        JLabel verificationLabel = new JLabel(player.isVerified() ? "Verified" : "Not Verified");
+        verificationLabel.setForeground(player.isVerified() ? Color.GREEN : Color.RED);
+        panel.add(verificationLabel, gbc);
+
+        // Confirm Split Button
+        gbc.gridy = 2;
+        if (player.getName().equals(currentPlayer)) {
+            JButton confirmButton = new JButton("Confirm Split");
+            confirmButton.addActionListener(e -> {
+                player.setConfirmedSplit(true);
+                sendSplitConfirmation(player.getName());
+                updatePartyMembers();
+            });
+            panel.add(confirmButton, gbc);
+        }
+
+        return panel;
+    }
+
+
+
+    private JLabel createNameLabel(PlayerInfo player) {
+        String rankIconPath = getRankIconPath(player.getRank());
+        String displayName = player.getName();
+
+        if (rankIconPath != null) {
+            try {
+                return new JLabel("<html>" + displayName + " <img src='" +
+                        getClass().getResource(rankIconPath) + "'/></html>");
+            } catch (NullPointerException e) {
+                System.err.println("Error loading icon for rank: " + player.getRank());
+            }
+        }
+        return new JLabel(displayName);
+    }
+
+    private void sendSplitConfirmation(String playerName) {
+        JSONObject payload = new JSONObject();
+        payload.put("action", "split_confirmed");
+        payload.put("rsn", playerName);
+        plugin.getWebSocketClient().send(payload.toString());
+    }
+
+
+
+    /**
+     * Returns the rank icon path based on the rank value.
+     */
+    private String getRankIconPath(int rank) {
+        switch (rank) {
+            case 0: return "/developer.png";
+            case 1: return "/minion.png";
+            case 2: return "/corporal.png";
+            case 3: return "/colonel.png";
+            case 4: return "/admiral.png";
+            case 5: return "/marshal.png";
+            case 6: return "/astral.png";
+            case 7: return "/captain.png";
+            case 8: return "/bronze_key.png";
+            case 9: return "/silver_key.png";
+            case 10: return "/gold_key.png";
+            default: return null;
+        }
+    }
+
+    /**
+     * Returns the rank title based on the rank value.
+     */
+    private String getRankTitle(int rank) {
+        switch (rank) {
+            case 0: return "Developer";
+            case 1: return "Verified Member";
+            case 2: return "Tier 1 Splitter";
+            case 3: return "Tier 2 Splitter";
+            case 4: return "Tier 3 Splitter";
+            case 5: return "Tier 4 Splitter";
+            case 6: return "Astral Star";
+            case 7: return "Tier 5 Splitter";
+            case 8: return "Admin";
+            case 9: return "Head Admin";
+            case 10: return "Kodai";
+            default: return "Unknown Rank";
+        }
+    }
+
+
 
 
 
@@ -310,8 +595,98 @@ public class OsrsSplitPluginPanel extends PluginPanel
     }
 
 
+    public void processWebSocketMessage(String message) {
+        SwingUtilities.invokeLater(() -> {
+            try {
+                JSONObject json = new JSONObject(message);
+                String action = json.getString("action");
 
-////////////////////////////////////////////////////////////////////////
+                if ("party_update".equals(action)) {
+                    JSONArray members = json.getJSONArray("members");
+
+                    plugin.getPartyManager().clearMembers();
+                    for (int i = 0; i < members.length(); i++) {
+                        JSONObject member = members.getJSONObject(i);
+                        String name = member.getString("name");
+                        int world = member.getInt("world");
+                        boolean verified = member.getBoolean("verified");
+                        boolean confirmedSplit = member.getBoolean("confirmedSplit");
+
+                        PlayerInfo player = new PlayerInfo(name, world, 0);
+                        player.setVerified(verified);
+                        player.setConfirmedSplit(confirmedSplit);
+                        plugin.getPartyManager().addMember(player);
+                    }
+
+                    SwingUtilities.invokeLater(() -> plugin.getOsrsSplitPluginPanel().updatePartyMembers());
+                }
+
+            } catch (Exception e) {
+                e.printStackTrace();
+                System.err.println("Error processing WebSocket message: " + e.getMessage());
+            }
+        });
+    }
+
+
+
+
+
+    private void broadcastPartyUpdate(String passphrase) {
+        JSONArray memberArray = new JSONArray();
+
+        for (PlayerInfo player : plugin.getPartyManager().getMembers().values()) {
+            JSONObject playerJson = new JSONObject();
+            playerJson.put("name", player.getName());
+            playerJson.put("world", player.getWorld());
+            playerJson.put("verified", player.isVerified());
+            playerJson.put("confirmedSplit", player.isConfirmedSplit());
+            memberArray.put(playerJson);
+        }
+
+        JSONObject updatePayload = new JSONObject();
+        updatePayload.put("action", "party_update");
+        updatePayload.put("passphrase", passphrase);
+        updatePayload.put("members", memberArray);
+
+        if (plugin.getWebSocketClient() != null && plugin.getWebSocketClient().isOpen()) {
+            plugin.getWebSocketClient().send(updatePayload.toString());
+        } else {
+            System.err.println("WebSocket is not connected. Could not send message.");
+        }
+
+    }
+
+
+    public void sendPartyUpdate() {
+        JSONObject payload = new JSONObject();
+        payload.put("action", "party_update");
+        payload.put("passphrase", plugin.getPartyManager().getLeader());
+
+        JSONArray memberArray = new JSONArray();
+        for (PlayerInfo player : plugin.getPartyManager().getMembers().values()) {
+            JSONObject playerJson = new JSONObject();
+            playerJson.put("name", player.getName());
+            playerJson.put("world", player.getWorld());
+            playerJson.put("rank", player.getRank());
+            playerJson.put("verified", player.isVerified());
+            playerJson.put("confirmedSplit", player.isConfirmedSplit());
+            memberArray.put(playerJson);
+        }
+
+        payload.put("members", memberArray);
+
+        if (plugin.getWebSocketClient() != null && plugin.getWebSocketClient().isOpen()) {
+            plugin.getWebSocketClient().send(payload.toString());
+        } else {
+            System.err.println("WebSocket is not connected. Unable to send party update.");
+        }
+    }
+
+
+
+
+    ////////////////////////////////////////////////////////////////////////
 //                         SCREEN SHOTTING
 ///////////////////////////////////////////////////////////////////////
     private void attemptScreenshot(Runnable afterScreenshot)
@@ -463,6 +838,8 @@ private void screenshotAndUpload()
         // Check if the item ID matches any of our special items
         return Arrays.stream(SPECIAL_ITEM_IDS).anyMatch(id -> id == itemId);
     }
+
+
 
 
 
