@@ -25,7 +25,7 @@ dependencies {
 	testImplementation group: 'net.runelite', name:'client', version: runeLiteVersion
 	testImplementation group: 'net.runelite', name:'jshell', version: runeLiteVersion
 	implementation 'org.json:json:20210307'
-	implementation 'org.java-websocket:Java-WebSocket:1.5.3'
+	implementation 'io.socket:socket.io-client:2.1.0'
 
 }
 

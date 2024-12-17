@@ -1,7 +1,7 @@
 package com.osrs_splits;
 
 import com.Utils.HttpUtil;
-import com.Utils.PartyWebSocketClient;
+import com.Utils.PartySocketIOClient;
 import com.Utils.PlayerVerificationStatus;
 import com.google.inject.Provides;
 import com.osrs_splits.PartyManager.PartyManager;
@@ -20,12 +20,12 @@ import net.runelite.client.plugins.PluginDescriptor;
 import net.runelite.client.ui.ClientToolbar;
 import net.runelite.client.ui.NavigationButton;
 import net.runelite.client.util.ImageUtil;
+
 import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import net.runelite.client.events.ConfigChanged;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -35,8 +35,8 @@ import java.awt.image.BufferedImage;
 @PluginDescriptor(
 		name = "1Nex Splits Kodai"
 )
-public class OsrsSplitPlugin extends Plugin
-{
+public class OsrsSplitPlugin extends Plugin {
+
 	@Getter
 	@Inject
 	private Client client;
@@ -61,6 +61,7 @@ public class OsrsSplitPlugin extends Plugin
 
 	private final String API_URL = "http://127.0.0.1:5000/verify";
 
+	@Getter
 	private OsrsSplitPluginPanel panel;
 	private NavigationButton navButton;
 
@@ -68,29 +69,25 @@ public class OsrsSplitPlugin extends Plugin
 	private PartyManager partyManager;
 
 	@Getter
-	private PartyWebSocketClient webSocketClient;
+	private PartySocketIOClient socketIoClient;
 
 	@Override
-	protected void startUp() throws Exception
-	{
+	protected void startUp() throws Exception {
 		// Initialize the PartyManager
 		partyManager = new PartyManager(config, this);
 
 		// Initialize the PluginPanel
 		panel = new OsrsSplitPluginPanel(this);
 
-		// Initialize WebSocket with connection blocking
+		// Initialize Socket.IO Client
 		try {
-			String socketIoUri = "ws://127.0.0.1:5000/socket.io/?EIO=4&transport=websocket";
-
-			webSocketClient = new PartyWebSocketClient(socketIoUri, this);
-			webSocketClient.connect();
-			System.out.println("WebSocket connection established successfully.");
+			String socketIoUri = "http://127.0.0.1:5000";
+			socketIoClient = new PartySocketIOClient(socketIoUri, this);
+			System.out.println("Socket.IO client connected successfully.");
 		} catch (Exception e) {
 			e.printStackTrace();
-			System.err.println("Failed to establish WebSocket connection.");
+			System.err.println("Failed to initialize Socket.IO client during startup.");
 		}
-
 
 		// Register the plugin and panel to the EventBus
 		eventBus.register(this);
@@ -118,37 +115,32 @@ public class OsrsSplitPlugin extends Plugin
 	}
 
 	@Override
-	protected void shutDown() throws Exception
-	{
+	protected void shutDown() throws Exception {
 		// Clean up navigation button and EventBus
 		clientToolbar.removeNavigation(navButton);
 		eventBus.unregister(this);
 		eventBus.unregister(panel);
 
-		// Safely close the WebSocket
-		if (webSocketClient != null) {
-			webSocketClient.close();
-			System.out.println("WebSocket closed during plugin shutdown.");
+		// Safely close the Socket.IO client
+		if (socketIoClient != null) {
+			socketIoClient.disconnect();
+			System.out.println("Socket.IO client disconnected during plugin shutdown.");
 		}
 	}
 
 	@Provides
-	OsrsSplitsConfig provideConfig(ConfigManager configManager)
-	{
+	OsrsSplitsConfig provideConfig(ConfigManager configManager) {
 		return configManager.getConfig(OsrsSplitsConfig.class);
 	}
 
 	@Subscribe
-	public void onGameStateChanged(GameStateChanged event)
-	{
-		if (event.getGameState() == GameState.LOGGED_IN)
-		{
+	public void onGameStateChanged(GameStateChanged event) {
+		if (event.getGameState() == GameState.LOGGED_IN) {
 			String playerName = client.getLocalPlayer().getName();
 			int world = client.getWorld();
 
 			// Update PartyManager and Panel
-			if (partyManager.isLeader(playerName))
-			{
+			if (partyManager.isLeader(playerName)) {
 				partyManager.updatePlayerData(playerName, world);
 				panel.updatePartyMembers();
 			}
@@ -164,20 +156,6 @@ public class OsrsSplitPlugin extends Plugin
 			partyManager.updatePlayerData(playerName, newWorld);
 			panel.sendPartyUpdate(); // Call the method from the panel to broadcast changes
 			panel.updatePartyMembers(); // Refresh UI to reflect new changes
-
-		}
-	}
-
-
-	@Subscribe
-	public void onConfigChanged(ConfigChanged event) {
-		if (!event.getGroup().equals("OsrsSplit")) {
-			return;
-		}
-
-		if (event.getKey().equals("apiKey")) {
-			String newApiKey = event.getNewValue();
-			saveApiKeyToFile(newApiKey);
 		}
 	}
 
@@ -205,6 +183,11 @@ public class OsrsSplitPlugin extends Plugin
 		}
 	}
 
+	public PartySocketIOClient getWebSocketClient() {
+		return socketIoClient; // Correct variable name
+	}
+
+
 
 	public PlayerVerificationStatus getPlayerVerificationStatus(String apiKey) {
 		JSONObject payload = new JSONObject();
@@ -229,7 +212,7 @@ public class OsrsSplitPlugin extends Plugin
 						if (rsns != null) {
 							for (int j = 0; j < rsns.length(); j++) {
 								String rsn = rsns.getString(j);
-								// Return verification status for each RSN
+								// Return verification status for the first RSN found
 								return new PlayerVerificationStatus(rsn, verified, rank);
 							}
 						}
@@ -247,20 +230,4 @@ public class OsrsSplitPlugin extends Plugin
 	}
 
 
-	// Update the WebSocket client dynamically
-	public void setWebSocketClient(PartyWebSocketClient newClient) {
-		if (webSocketClient != null && webSocketClient.isOpen()) {
-			webSocketClient.close();
-		}
-		this.webSocketClient = newClient;
-	}
-
-
-	public OsrsSplitPluginPanel getOsrsSplitPluginPanel() {
-		return panel;
-	}
-
-	public String getApiUrl() {
-		return "http://127.0.0.1:5000/";
-	}
 }

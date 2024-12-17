@@ -92,7 +92,7 @@ public class PartyManager
                 }
 
                 System.out.println("Party updated: " + members);
-                plugin.getOsrsSplitPluginPanel().updatePartyMembers();
+                plugin.getPanel().updatePartyMembers();
             }
         } catch (JSONException e) {
             e.printStackTrace();
