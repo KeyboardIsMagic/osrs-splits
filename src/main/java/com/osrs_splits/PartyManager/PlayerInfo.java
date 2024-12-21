@@ -15,12 +15,12 @@ public class PlayerInfo {
     @Setter
     private boolean confirmedSplit;
 
-    public PlayerInfo(String name, int world, int rank) {
+    public PlayerInfo(String name, int world, int rank, boolean verified, boolean confirmedSplit) {
         this.name = name;
         this.world = world;
         this.rank = rank;
-        this.verified = false;
-        this.confirmedSplit = false;
+        this.verified = verified;
+        this.confirmedSplit = confirmedSplit;
     }
 }
 

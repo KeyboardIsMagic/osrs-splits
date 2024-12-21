@@ -30,4 +30,22 @@ public class HttpUtil {
             throw new Exception("HTTP error code: " + responseCode);
         }
     }
+
+    public static String getRequest(String urlString) throws Exception {
+        URL url = new URL(urlString);
+        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+        conn.setRequestMethod("GET");
+        conn.setRequestProperty("Accept", "application/json");
+
+        // Get the response
+        int responseCode = conn.getResponseCode();
+        if (responseCode == HttpURLConnection.HTTP_OK) {
+            try (Scanner scanner = new Scanner(conn.getInputStream())) {
+                scanner.useDelimiter("\\A"); // Read the entire stream
+                return scanner.hasNext() ? scanner.next() : "";
+            }
+        } else {
+            throw new Exception("HTTP GET error code: " + responseCode);
+        }
+    }
 }

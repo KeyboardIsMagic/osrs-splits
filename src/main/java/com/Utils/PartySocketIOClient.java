@@ -1,13 +1,18 @@
 package com.Utils;
 
 import com.osrs_splits.OsrsSplitPlugin;
+import com.osrs_splits.PartyManager.PlayerInfo;
 import io.socket.client.IO;
 import io.socket.client.Socket;
 import io.socket.emitter.Emitter;
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 
+import javax.swing.*;
 import java.net.URISyntaxException;
+import java.util.HashMap;
+import java.util.Map;
 
 public class PartySocketIOClient
 {
@@ -64,15 +69,16 @@ public class PartySocketIOClient
         this.plugin = plugin;
     }
 
-    public void sendCreateParty(String passphrase, String rsn) {
+    public void sendCreateParty(String passphrase, String rsn, int world) {
         JSONObject payload = new JSONObject();
         payload.put("passphrase", passphrase);
         payload.put("rsn", rsn);
+        payload.put("world", world);
 
-        // Emit 'create-party' as a Socket.IO event
         socket.emit("create-party", payload);
         System.out.println("Sent create-party event with payload: " + payload);
     }
+
 
 
     public void sendJoinParty(String passphrase, String rsn) {
@@ -96,18 +102,57 @@ public class PartySocketIOClient
     }
 
     private void processPartyUpdate(Object data) {
-        System.out.println("Processing Party Update: " + data);
-        // You can parse the JSON and call relevant plugin methods here
+        try {
+            JSONObject json = new JSONObject(data.toString());
+            String action = json.getString("action");
+
+            if ("party_update".equals(action)) {
+                String passphrase = json.getString("passphrase");
+                JSONArray membersArray = json.getJSONArray("members");
+
+                Map<String, PlayerInfo> updatedMembers = new HashMap<>();
+                for (int i = 0; i < membersArray.length(); i++) {
+                    JSONObject memberJson = membersArray.getJSONObject(i);
+
+                    // Use the new constructor and provide all required parameters
+                    PlayerInfo playerInfo = new PlayerInfo(
+                            memberJson.getString("name"),
+                            memberJson.getInt("world"),
+                            memberJson.getInt("rank"),
+                            memberJson.getBoolean("verified"),
+                            memberJson.getBoolean("confirmedSplit")
+                    );
+
+                    updatedMembers.put(playerInfo.getName(), playerInfo);
+                }
+
+                SwingUtilities.invokeLater(() -> {
+                    plugin.getPartyManager().setMembers(updatedMembers);
+                    plugin.getPanel().updatePartyMembers(); // Refresh UI
+                });
+
+                System.out.println("Processed party update for passphrase: " + passphrase);
+            } else if ("party_disband".equals(action)) {
+                String passphrase = json.getString("passphrase");
+                System.out.println("Party disbanded: " + passphrase);
+
+                SwingUtilities.invokeLater(() -> {
+                    plugin.getPartyManager().clearMembers();
+                    plugin.getPanel().updatePartyMembers();
+                });
+            } else {
+                System.out.println("Unknown action: " + action);
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
     }
 
-    public static void main(String[] args) {
-        OsrsSplitPlugin plugin = new OsrsSplitPlugin(); // Replace with your actual plugin instance
-        PartySocketIOClient client = new PartySocketIOClient("http://127.0.0.1:5000", plugin);
 
-        // Example usage
-        client.sendCreateParty("pop", "opk");
-        client.sendJoinParty("pop", "opk");
-    }
+
+
+
+
 
     public void sendLeaveParty(String passphrase, String rsn) {
         JSONObject payload = new JSONObject();

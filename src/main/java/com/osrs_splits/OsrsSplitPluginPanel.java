@@ -32,6 +32,7 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Arrays;
 import java.util.Map;
+import java.util.Objects;
 
 public class OsrsSplitPluginPanel extends PluginPanel
 {
@@ -68,17 +69,21 @@ public class OsrsSplitPluginPanel extends PluginPanel
         gbc.gridwidth = 2;
         add(partyButtonsPanel, gbc);
 
-        JPanel leavePanel = new JPanel();
-        leavePanel.setLayout(new BoxLayout(leavePanel, BoxLayout.Y_AXIS));
-        leavePanel.add(leavePartyButton);
-        leavePanel.add(Box.createVerticalStrut(5));
-        leavePanel.add(passphraseLabel);
+        JPanel leavePanel = new JPanel(new BorderLayout());
+        leavePanel.add(leavePartyButton, BorderLayout.NORTH);
+
+        passphraseLabel.setHorizontalAlignment(SwingConstants.CENTER);
+        passphraseLabel.setFont(passphraseLabel.getFont().deriveFont(Font.PLAIN));
+        passphraseLabel.setBorder(new EmptyBorder(5, 0, 10, 0)); // Add padding (top, left, bottom, right)
+
+        leavePanel.add(passphraseLabel, BorderLayout.SOUTH);
 
         gbc.gridx = 0;
         gbc.gridy = 1;
         gbc.gridwidth = 2;
         gbc.anchor = GridBagConstraints.CENTER;
         add(leavePanel, gbc);
+
 
         memberListPanel.setLayout(new BoxLayout(memberListPanel, BoxLayout.Y_AXIS));
         gbc.gridx = 0;
@@ -113,7 +118,7 @@ public class OsrsSplitPluginPanel extends PluginPanel
         }
 
         String playerName = plugin.getClient().getLocalPlayer().getName();
-        int world = plugin.getClient().getWorld();
+        int world = plugin.getClient().getWorld(); // Get the player's world
 
         if (plugin.getPartyManager().isInParty(playerName)) {
             JOptionPane.showMessageDialog(this, "You are already in a party.", "Error", JOptionPane.ERROR_MESSAGE);
@@ -130,9 +135,16 @@ public class OsrsSplitPluginPanel extends PluginPanel
             @Override
             protected Void doInBackground() {
                 try {
-                    // Use the new Socket.IO method to create a party
-                    plugin.getWebSocketClient().sendCreateParty(passphrase, playerName);
-                    plugin.getPartyManager().createParty(playerName, 0);
+                    // Send the create-party event with the world
+                    plugin.getWebSocketClient().sendCreateParty(passphrase, playerName, world);
+                    plugin.getPartyManager().createParty(playerName, passphrase);
+
+                    // Set current party details
+                    plugin.getPartyManager().setCurrentPartyPassphrase(passphrase);
+                    Map<String, PlayerInfo> updatedMembers = Map.of(
+                            playerName, new PlayerInfo(playerName, world, 0, false, false)
+                    );
+                    plugin.getPartyManager().setMembers(updatedMembers);
                 } catch (Exception e) {
                     JOptionPane.showMessageDialog(OsrsSplitPluginPanel.this, "Failed to create party: " + e.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
                 }
@@ -150,6 +162,9 @@ public class OsrsSplitPluginPanel extends PluginPanel
 
         worker.execute();
     }
+
+
+
 
 
 
@@ -175,6 +190,11 @@ public class OsrsSplitPluginPanel extends PluginPanel
                 try {
                     // Use the new Socket.IO method to join a party
                     plugin.getWebSocketClient().sendJoinParty(passphrase, playerName);
+
+                    // Retrieve the party details from the server or WebSocket
+                    Map<String, PlayerInfo> updatedMembers = plugin.getPartyManager().getMembers(); // Or use server data
+                    plugin.getPartyManager().setCurrentPartyPassphrase(passphrase);
+                    plugin.getPartyManager().setMembers(updatedMembers);
                 } catch (Exception e) {
                     JOptionPane.showMessageDialog(OsrsSplitPluginPanel.this, "Failed to join party: " + e.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
                 }
@@ -194,6 +214,7 @@ public class OsrsSplitPluginPanel extends PluginPanel
 
         worker.execute();
     }
+
 
 
 
@@ -255,13 +276,9 @@ public class OsrsSplitPluginPanel extends PluginPanel
     {
         leavePartyButton.setVisible(true);
         joinPartyButton.setEnabled(false);
+        createPartyButton.setEnabled(false);
     }
 
-    public void disableJoinParty()
-    {
-        leavePartyButton.setVisible(false);
-        joinPartyButton.setEnabled(true);
-    }
 
     public void showLoginWarning()
     {
@@ -273,51 +290,92 @@ public class OsrsSplitPluginPanel extends PluginPanel
         JOptionPane.showMessageDialog(this, "Could not join the party. It may be full or not exist.", "Join Failed", JOptionPane.WARNING_MESSAGE);
     }
 
-    private JPanel createPlayerCard(String playerName, int world, boolean verified, boolean splitConfirmed, boolean isLeader) {
+    private JPanel createPlayerCard(String playerName, int world, boolean verified, boolean splitConfirmed, boolean isLeader, int rank) {
         JPanel cardPanel = new JPanel(new GridBagLayout());
         cardPanel.setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createLineBorder(Color.GRAY, 1, true),
                 new EmptyBorder(5, 5, 5, 5)
         ));
-        cardPanel.setBackground(Color.WHITE); // Base background for cards
+        cardPanel.setBackground(getBackground()); // Match parent background
 
         GridBagConstraints gbc = new GridBagConstraints();
         gbc.insets = new Insets(2, 5, 2, 5);
-        gbc.anchor = GridBagConstraints.WEST;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
 
-        // Row 1: Player Name + Leader Indicator
+        // Row 1: Name (left) with Leader highlight
         gbc.gridx = 0;
         gbc.gridy = 0;
+        gbc.weightx = 1.0;
         JLabel nameLabel = new JLabel(playerName + (isLeader ? " (Leader)" : ""));
+        nameLabel.setFont(nameLabel.getFont().deriveFont(Font.BOLD));
         nameLabel.setForeground(isLeader ? Color.BLUE : Color.BLACK);
+
+        // Add rank icon next to the player's name
+        if (rank >= 0) {
+            String rankIconPath = getRankIconPath(rank);
+            if (rankIconPath != null) {
+                ImageIcon rankIcon = new ImageIcon(Objects.requireNonNull(getClass().getResource(rankIconPath)));
+                nameLabel.setIconTextGap(5); // Add gap between text and icon
+                nameLabel.setToolTipText(getRankTitle(rank)); // Tooltip for rank
+                nameLabel.setText(playerName + " "); // Add space between name and icon
+                nameLabel.setIcon(rankIcon);
+            }
+        }
         cardPanel.add(nameLabel, gbc);
 
-        // Row 2: World
-        gbc.gridy++;
+        // World information
+        gbc.gridx = 1;
         JLabel worldLabel = new JLabel("World: " + world);
-        worldLabel.setForeground(world == plugin.getClient().getWorld() ? Color.GREEN : Color.RED);
+        worldLabel.setForeground(world == plugin.getClient().getWorld() ? Color.GREEN : Color.RED); // Highlight current world
         cardPanel.add(worldLabel, gbc);
 
-        // Row 3: Verification Status
-        gbc.gridy++;
+        // Row 2: Discord Label and Verification Status
+        gbc.gridx = 0;
+        gbc.gridy = 1;
+        JLabel discordLabel = new JLabel("Discord");
+        discordLabel.setForeground(new Color(88, 101, 242)); // Discord blue color
+        discordLabel.setFont(discordLabel.getFont().deriveFont(Font.BOLD));
+        cardPanel.add(discordLabel, gbc);
+
+        gbc.gridx = 1;
         JLabel verificationLabel = new JLabel(verified ? "Verified" : "Not Verified");
-        verificationLabel.setForeground(verified ? Color.GREEN : Color.RED);
+        verificationLabel.setForeground(verified ? Color.GREEN : Color.RED); // Green if verified, red otherwise
         cardPanel.add(verificationLabel, gbc);
 
-        // Row 4: Split Confirmation
-        gbc.gridy++;
-        JLabel splitLabel = new JLabel(splitConfirmed ? "Split Confirmed" : "Split Pending");
-        splitLabel.setForeground(splitConfirmed ? Color.GREEN : Color.RED);
-        cardPanel.add(splitLabel, gbc);
+        // Row 3: Split Confirmation Button and Status
+        gbc.gridx = 0;
+        gbc.gridy = 2;
+        JButton confirmButton = new JButton("Confirm Split");
+        confirmButton.setPreferredSize(new Dimension(110, 20));
+        confirmButton.addActionListener(e -> {
+            plugin.getPartyManager().toggleSplitConfirmation(playerName); // Toggle confirmation status
+            updatePartyMembers(); // Refresh the UI
+            screenshotButton.setEnabled(plugin.getPartyManager().allPlayersConfirmedAndSameWorld());
+        });
+        cardPanel.add(confirmButton, gbc);
+
+        gbc.gridx = 1;
+        JLabel confirmationStatus = new JLabel(splitConfirmed ? "Yes" : "No");
+        confirmationStatus.setForeground(splitConfirmed ? Color.GREEN : Color.RED); // Green if confirmed, red otherwise
+        cardPanel.add(confirmationStatus, gbc);
 
         return cardPanel;
     }
 
 
+
+
+
+
+
+
+
     public void updatePartyMembers() {
         SwingUtilities.invokeLater(() -> {
-            memberListPanel.removeAll(); // Clear the panel before re-rendering
+            String passphrase = plugin.getPartyManager().getCurrentPartyPassphrase();
+            plugin.getPartyManager().fetchPartyState(passphrase);
 
+            memberListPanel.removeAll(); // Clear old members
             Map<String, PlayerInfo> members = plugin.getPartyManager().getMembers();
             String leader = plugin.getPartyManager().getLeader();
 
@@ -326,7 +384,11 @@ public class OsrsSplitPluginPanel extends PluginPanel
                 noMembersLabel.setHorizontalAlignment(SwingConstants.CENTER);
                 memberListPanel.add(noMembersLabel);
             } else {
-                // Add player cards for each member
+                JLabel partyLabel = new JLabel("Party: " + passphrase);
+                partyLabel.setHorizontalAlignment(SwingConstants.CENTER);
+                partyLabel.setFont(partyLabel.getFont().deriveFont(Font.PLAIN));
+                memberListPanel.add(partyLabel);
+
                 for (PlayerInfo player : members.values()) {
                     boolean isLeader = player.getName().equals(leader);
                     JPanel playerCard = createPlayerCard(
@@ -334,7 +396,8 @@ public class OsrsSplitPluginPanel extends PluginPanel
                             player.getWorld(),
                             player.isVerified(),
                             player.isConfirmedSplit(),
-                            isLeader
+                            isLeader,
+                            player.getRank()
                     );
                     memberListPanel.add(playerCard);
                 }
@@ -348,72 +411,6 @@ public class OsrsSplitPluginPanel extends PluginPanel
 
 
 
-    private JPanel createPlayerPanel(PlayerInfo player, String currentPlayer, String leader) {
-        JPanel panel = new JPanel(new GridBagLayout());
-        panel.setBorder(BorderFactory.createCompoundBorder(new LineBorder(Color.GRAY, 1, true), new EmptyBorder(2, 5, 2, 5)));
-
-        GridBagConstraints gbc = new GridBagConstraints();
-        gbc.insets = new Insets(2, 5, 2, 5);
-
-        // Name and Leader Status
-        gbc.gridx = 0;
-        gbc.gridy = 0;
-        JLabel nameLabel = new JLabel(player.getName() + (player.getName().equals(leader) ? " (Leader)" : ""));
-        nameLabel.setForeground(player.getName().equals(leader) ? Color.BLUE : Color.BLACK);
-        panel.add(nameLabel, gbc);
-
-        // World Label
-        gbc.gridy = 1;
-        JLabel worldLabel = new JLabel("World " + player.getWorld());
-        worldLabel.setForeground(player.getWorld() == plugin.getClient().getWorld() ? Color.GREEN : Color.RED);
-        panel.add(worldLabel, gbc);
-
-        // Verification Status
-        gbc.gridx = 1;
-        JLabel verificationLabel = new JLabel(player.isVerified() ? "Verified" : "Not Verified");
-        verificationLabel.setForeground(player.isVerified() ? Color.GREEN : Color.RED);
-        panel.add(verificationLabel, gbc);
-
-        // Confirm Split Button
-        gbc.gridy = 2;
-        if (player.getName().equals(currentPlayer)) {
-            JButton confirmButton = new JButton("Confirm Split");
-            confirmButton.addActionListener(e -> {
-                player.setConfirmedSplit(true);
-                sendSplitConfirmation(player.getName());
-                updatePartyMembers();
-            });
-            panel.add(confirmButton, gbc);
-        }
-
-        return panel;
-    }
-
-
-
-    private JLabel createNameLabel(PlayerInfo player) {
-        String rankIconPath = getRankIconPath(player.getRank());
-        String displayName = player.getName();
-
-        if (rankIconPath != null) {
-            try {
-                return new JLabel("<html>" + displayName + " <img src='" +
-                        getClass().getResource(rankIconPath) + "'/></html>");
-            } catch (NullPointerException e) {
-                System.err.println("Error loading icon for rank: " + player.getRank());
-            }
-        }
-        return new JLabel(displayName);
-    }
-
-    private void sendSplitConfirmation(String playerName) {
-        JSONObject payload = new JSONObject();
-        payload.put("action", "split_confirmed");
-        payload.put("rsn", playerName);
-
-        plugin.getWebSocketClient().send("split_confirmed", payload.toString());
-        System.out.println("Sent split confirmation: " + payload);
-    }
 
 
 
@@ -496,65 +493,6 @@ public class OsrsSplitPluginPanel extends PluginPanel
         Timer delayTimer = new Timer(500, e -> afterMessagesSent.run());
         delayTimer.setRepeats(false);
         delayTimer.start();
-    }
-
-
-    public void processWebSocketMessage(String message) {
-        SwingUtilities.invokeLater(() -> {
-            try {
-                JSONObject json = new JSONObject(message);
-                String action = json.getString("action");
-
-                if ("party_update".equals(action)) {
-                    JSONArray members = json.getJSONArray("members");
-
-                    plugin.getPartyManager().clearMembers();
-                    for (int i = 0; i < members.length(); i++) {
-                        JSONObject member = members.getJSONObject(i);
-                        String name = member.getString("name");
-                        int world = member.getInt("world");
-                        boolean verified = member.getBoolean("verified");
-                        boolean confirmedSplit = member.getBoolean("confirmedSplit");
-
-                        PlayerInfo player = new PlayerInfo(name, world, 0);
-                        player.setVerified(verified);
-                        player.setConfirmedSplit(confirmedSplit);
-                        plugin.getPartyManager().addMember(player);
-                    }
-
-                    updatePartyMembers(); // Refresh the UI
-                }
-            } catch (Exception e) {
-                e.printStackTrace();
-                System.err.println("Error processing WebSocket message: " + e.getMessage());
-            }
-        });
-    }
-
-
-
-
-
-
-    private void broadcastPartyUpdate(String passphrase) {
-        JSONArray memberArray = new JSONArray();
-
-        for (PlayerInfo player : plugin.getPartyManager().getMembers().values()) {
-            JSONObject playerJson = new JSONObject();
-            playerJson.put("name", player.getName());
-            playerJson.put("world", player.getWorld());
-            playerJson.put("verified", player.isVerified());
-            playerJson.put("confirmedSplit", player.isConfirmedSplit());
-            memberArray.put(playerJson);
-        }
-
-        JSONObject updatePayload = new JSONObject();
-        updatePayload.put("action", "party_update");
-        updatePayload.put("passphrase", passphrase);
-        updatePayload.put("members", memberArray);
-
-        plugin.getWebSocketClient().sendUpdateParty(updatePayload.toString());
-        System.out.println("Broadcasted party update: " + updatePayload);
     }
 
 

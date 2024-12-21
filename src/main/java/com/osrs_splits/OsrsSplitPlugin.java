@@ -5,6 +5,7 @@ import com.Utils.PartySocketIOClient;
 import com.Utils.PlayerVerificationStatus;
 import com.google.inject.Provides;
 import com.osrs_splits.PartyManager.PartyManager;
+import com.osrs_splits.PartyManager.PlayerInfo;
 import lombok.Getter;
 import net.runelite.api.Client;
 import net.runelite.api.GameState;
@@ -135,17 +136,20 @@ public class OsrsSplitPlugin extends Plugin {
 
 	@Subscribe
 	public void onGameStateChanged(GameStateChanged event) {
-		if (event.getGameState() == GameState.LOGGED_IN) {
+		if (event.getGameState() == GameState.LOGGED_IN && client.getLocalPlayer() != null) {
 			String playerName = client.getLocalPlayer().getName();
 			int world = client.getWorld();
 
-			// Update PartyManager and Panel
-			if (partyManager.isLeader(playerName)) {
-				partyManager.updatePlayerData(playerName, world);
-				panel.updatePartyMembers();
+			// Verify player using the API
+			PlayerVerificationStatus status = getPlayerVerificationStatus(config.apiKey());
+			if (status.isVerified()) {
+				PlayerInfo playerInfo = new PlayerInfo(playerName, world, status.getRank(), status.isVerified(), false);
+				playerInfo.setVerified(true);
+				partyManager.addMember(playerInfo); // Add/update player data
 			}
 		}
 	}
+
 
 	@Subscribe
 	public void onWorldChanged(WorldChanged event) {
@@ -207,27 +211,30 @@ public class OsrsSplitPlugin extends Plugin {
 					for (int i = 0; i < rsnData.length(); i++) {
 						JSONObject rsnObject = rsnData.getJSONObject(i);
 						rank = rsnObject.optInt("rank", -1);
-						JSONArray rsns = rsnObject.optJSONArray("rsn");
+						String rsn = rsnObject.optString("rsn");
 
-						if (rsns != null) {
-							for (int j = 0; j < rsns.length(); j++) {
-								String rsn = rsns.getString(j);
-								// Return verification status for the first RSN found
-								return new PlayerVerificationStatus(rsn, verified, rank);
-							}
+						// Update the party manager with verified status
+						PlayerInfo playerInfo = partyManager.getMember(rsn);
+						if (playerInfo != null) {
+							playerInfo.setVerified(true);
+							playerInfo.setRank(rank);
+							partyManager.updatePlayerData(rsn, playerInfo.getWorld());
 						}
+
+						return new PlayerVerificationStatus(rsn, true, rank);
 					}
 				}
 			}
 
-			// Return unverified status if no matches
-			return new PlayerVerificationStatus("", false, -1);
+			return new PlayerVerificationStatus("", false, -1); // Unverified status
 		} catch (Exception e) {
 			e.printStackTrace();
 			System.err.println("Error fetching verification status: " + e.getMessage());
 			return new PlayerVerificationStatus("", false, -1);
 		}
 	}
+
+
 
 
 }
