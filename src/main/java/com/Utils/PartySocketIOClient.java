@@ -7,6 +7,8 @@ import io.socket.client.Socket;
 import io.socket.emitter.Emitter;
 import org.json.JSONArray;
 import org.json.JSONObject;
+import java.util.Timer;
+import java.util.TimerTask;
 
 
 import javax.swing.*;
@@ -69,6 +71,7 @@ public class PartySocketIOClient
         this.plugin = plugin;
     }
 
+
     public void sendCreateParty(String passphrase, String rsn, int world) {
         JSONObject payload = new JSONObject();
         payload.put("passphrase", passphrase);
@@ -106,49 +109,69 @@ public class PartySocketIOClient
             JSONObject json = new JSONObject(data.toString());
             String action = json.getString("action");
 
-            if ("party_update".equals(action)) {
-                String passphrase = json.getString("passphrase");
-                JSONArray membersArray = json.getJSONArray("members");
-
-                Map<String, PlayerInfo> updatedMembers = new HashMap<>();
-                for (int i = 0; i < membersArray.length(); i++) {
-                    JSONObject memberJson = membersArray.getJSONObject(i);
-
-                    // Use the new constructor and provide all required parameters
-                    PlayerInfo playerInfo = new PlayerInfo(
-                            memberJson.getString("name"),
-                            memberJson.getInt("world"),
-                            memberJson.getInt("rank"),
-                            memberJson.getBoolean("verified"),
-                            memberJson.getBoolean("confirmedSplit")
-                    );
-
-                    updatedMembers.put(playerInfo.getName(), playerInfo);
-                }
-
-                SwingUtilities.invokeLater(() -> {
-                    plugin.getPartyManager().setMembers(updatedMembers);
-                    plugin.getPanel().updatePartyMembers(); // Refresh UI
-                });
-
-                System.out.println("Processed party update for passphrase: " + passphrase);
-            } else if ("party_disband".equals(action)) {
-                String passphrase = json.getString("passphrase");
-                System.out.println("Party disbanded: " + passphrase);
-
+            if ("party_disband".equals(action)) {
+                System.out.println("Party disbanded: " + json.getString("passphrase"));
                 SwingUtilities.invokeLater(() -> {
                     plugin.getPartyManager().clearMembers();
                     plugin.getPanel().updatePartyMembers();
+                    JOptionPane.showMessageDialog(null, "Party has been disbanded.", "Party Disbanded", JOptionPane.INFORMATION_MESSAGE);
                 });
-            } else {
-                System.out.println("Unknown action: " + action);
+                return; // No further processing needed for disband action
             }
+
+            if (!"party_update".equals(action)) {
+                System.out.println("Unknown action: " + action);
+                return;
+            }
+
+            // Process party_update action
+            String passphrase = json.getString("passphrase");
+            if (!passphrase.equals(plugin.getPartyManager().getCurrentPartyPassphrase())) {
+                System.out.println("Ignoring update for mismatched passphrase.");
+                return;
+            }
+
+            JSONArray membersArray = json.getJSONArray("members");
+            Map<String, PlayerInfo> updatedMembers = new HashMap<>();
+            for (int i = 0; i < membersArray.length(); i++) {
+                JSONObject memberJson = membersArray.getJSONObject(i);
+                PlayerInfo playerInfo = new PlayerInfo(
+                        memberJson.getString("name"),
+                        memberJson.getInt("world"),
+                        memberJson.getInt("rank"),
+                        memberJson.getBoolean("verified"),
+                        memberJson.getBoolean("confirmedSplit")
+                );
+                updatedMembers.put(playerInfo.getName(), playerInfo);
+            }
+
+            SwingUtilities.invokeLater(() -> {
+                plugin.getPartyManager().setMembers(updatedMembers);
+                plugin.getPanel().updatePartyMembers();
+            });
         } catch (Exception e) {
             e.printStackTrace();
         }
     }
 
 
+
+
+    public void emitClientState() {
+        Timer timer = new Timer(); // Create a Timer instance
+        timer.scheduleAtFixedRate(new TimerTask() {
+            @Override
+            public void run() {
+                if (plugin.getPartyManager().isInParty(plugin.getClient().getLocalPlayer().getName())) {
+                    JSONObject payload = new JSONObject();
+                    payload.put("passphrase", plugin.getPartyManager().getCurrentPartyPassphrase());
+                    payload.put("name", plugin.getClient().getLocalPlayer().getName());
+                    payload.put("world", plugin.getClient().getWorld());
+                    plugin.getWebSocketClient().send("client_state_update", payload.toString());
+                }
+            }
+        }, 0, 5000); // Delay of 0 ms, repeat every 5000 ms (5 seconds)
+    }
 
 
 
@@ -176,8 +199,15 @@ public class PartySocketIOClient
         if (!socket.connected()) {
             socket.connect();
             System.out.println("Reconnecting to Socket.IO server...");
+            if (plugin.getPartyManager().getCurrentPartyPassphrase() != null) {
+                sendJoinParty(
+                        plugin.getPartyManager().getCurrentPartyPassphrase(),
+                        plugin.getClient().getLocalPlayer().getName()
+                );
+            }
         }
     }
+
 
     public void send(String event, String payload) {
         socket.emit(event, payload);

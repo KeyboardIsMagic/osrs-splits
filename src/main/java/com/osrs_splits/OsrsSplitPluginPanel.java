@@ -372,32 +372,35 @@ public class OsrsSplitPluginPanel extends PluginPanel
 
     public void updatePartyMembers() {
         SwingUtilities.invokeLater(() -> {
-            String passphrase = plugin.getPartyManager().getCurrentPartyPassphrase();
-            plugin.getPartyManager().fetchPartyState(passphrase);
+            memberListPanel.removeAll();
 
-            memberListPanel.removeAll(); // Clear old members
             Map<String, PlayerInfo> members = plugin.getPartyManager().getMembers();
-            String leader = plugin.getPartyManager().getLeader();
-
-            if (members.isEmpty()) {
+            if (members == null || members.isEmpty()) {
                 JLabel noMembersLabel = new JLabel("No members in the party.");
                 noMembersLabel.setHorizontalAlignment(SwingConstants.CENTER);
                 memberListPanel.add(noMembersLabel);
             } else {
-                JLabel partyLabel = new JLabel("Party: " + passphrase);
-                partyLabel.setHorizontalAlignment(SwingConstants.CENTER);
-                partyLabel.setFont(partyLabel.getFont().deriveFont(Font.PLAIN));
-                memberListPanel.add(partyLabel);
-
                 for (PlayerInfo player : members.values()) {
-                    boolean isLeader = player.getName().equals(leader);
+                    if (player == null || player.getName() == null) {
+                        System.out.println("Skipping null or invalid player.");
+                        continue;
+                    }
+
+                    boolean verified = player.isVerified();
+                    int rank = player.getRank();
+
+                    // Defensive checks for default rank and verified status
+                    if (rank == -1) {
+                        verified = false;
+                    }
+
                     JPanel playerCard = createPlayerCard(
                             player.getName(),
                             player.getWorld(),
-                            player.isVerified(),
+                            verified,
                             player.isConfirmedSplit(),
-                            isLeader,
-                            player.getRank()
+                            player.getName().equals(plugin.getPartyManager().getLeader()),
+                            rank
                     );
                     memberListPanel.add(playerCard);
                 }
@@ -407,6 +410,12 @@ public class OsrsSplitPluginPanel extends PluginPanel
             memberListPanel.repaint();
         });
     }
+
+
+
+
+
+
 
 
 

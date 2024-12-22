@@ -18,6 +18,7 @@ public class PartyManager {
     private String passphrase; // Passphrase of the current party
     @Getter
     private String leader;
+    private final Map<String, PlayerVerificationStatus> verificationCache = new HashMap<>();
 
     @Getter
     private final Map<String, PlayerInfo> members = new HashMap<>();
@@ -61,11 +62,6 @@ public class PartyManager {
     }
 
 
-    private int fetchPlayerRankFromDatabase(String playerName) {
-        // Logic to fetch the rank from the database
-        // Placeholder return value for testing
-        return 1; // Example rank
-    }
 
     public void updateCurrentParty(String passphrase, Map<String, PlayerInfo> members) {
         this.currentPartyPassphrase = passphrase;
@@ -169,6 +165,10 @@ public class PartyManager {
 
 
     public void addMember(PlayerInfo playerInfo) {
+        if (playerInfo == null || playerInfo.getName() == null) {
+            System.out.println("Warning: Attempted to add null or invalid member.");
+            return;
+        }
         if (!members.containsKey(playerInfo.getName())) {
             members.put(playerInfo.getName(), playerInfo);
             System.out.println("Member added: " + playerInfo.getName());
@@ -176,6 +176,7 @@ public class PartyManager {
             System.out.println("Member already exists: " + playerInfo.getName());
         }
     }
+
 
     public void setMembers(Map<String, PlayerInfo> updatedMembers) {
         if (updatedMembers == null) {
@@ -188,9 +189,13 @@ public class PartyManager {
         System.out.println("Party members updated for passphrase: " + currentPartyPassphrase + ". New member count: " + members.size());
     }
 
-    public PlayerInfo getMember(String rsn) {
-        return members.get(rsn);
+    public Map<String, PlayerInfo> getMembers() {
+        if (members.isEmpty()) {
+            System.out.println("Warning: Members map is empty.");
+        }
+        return members;
     }
+
 
     public void fetchPartyState(String passphrase) {
         SwingWorker<Void, Void> worker = new SwingWorker<>() {
@@ -216,26 +221,44 @@ public class PartyManager {
     }
 
 
-    private void updatePartyFromApi(JSONObject partyState) {
-        String leader = partyState.getString("leader");
-        JSONArray membersArray = partyState.getJSONArray("members");
+    public void updatePartyFromApi(JSONObject partyState) {
+        String passphrase = partyState.getString("passphrase");
+        if (!passphrase.equals(currentPartyPassphrase)) {
+            System.out.println("Ignored update for mismatched passphrase.");
+            return; // Ignore updates for other passphrases
+        }
 
+        JSONArray membersArray = partyState.getJSONArray("members");
         Map<String, PlayerInfo> updatedMembers = new HashMap<>();
+
         for (int i = 0; i < membersArray.length(); i++) {
             JSONObject memberData = membersArray.getJSONObject(i);
-            String name = memberData.getString("name");
-            int world = memberData.getInt("world");
-            int rank = memberData.getInt("rank");
-            boolean verified = memberData.getBoolean("verified");
-            boolean confirmedSplit = memberData.getBoolean("confirmedSplit");
+            String name = memberData.optString("name", null);
+            if (name == null) {
+                System.out.println("Skipped member with null name.");
+                continue;
+            }
+
+            int world = memberData.optInt("world", -1);
+            boolean verified = memberData.optBoolean("verified", false);
+            int rank = memberData.optInt("rank", 0);
+            boolean confirmedSplit = memberData.optBoolean("confirmedSplit", false);
 
             PlayerInfo playerInfo = new PlayerInfo(name, world, rank, verified, confirmedSplit);
             updatedMembers.put(name, playerInfo);
         }
 
-        this.leader = leader;
         this.members.clear();
         this.members.putAll(updatedMembers);
+        System.out.println("Party updated for passphrase: " + currentPartyPassphrase);
+    }
+
+    public PlayerVerificationStatus getCachedVerification(String playerName) {
+        return verificationCache.get(playerName);
+    }
+
+    public void cacheVerification(String playerName, PlayerVerificationStatus status) {
+        verificationCache.put(playerName, status);
     }
 
 }
