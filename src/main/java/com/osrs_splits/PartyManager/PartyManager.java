@@ -20,7 +20,6 @@ public class PartyManager {
     private String leader;
     private final Map<String, PlayerVerificationStatus> verificationCache = new HashMap<>();
 
-    @Getter
     private final Map<String, PlayerInfo> members = new HashMap<>();
 
     private final OsrsSplitPlugin plugin;
@@ -47,17 +46,16 @@ public class PartyManager {
             return false;
         }
 
-        int world = plugin.getClient().getWorld(); // Get the current world
-
-        // Query the database for rank and verification status
+        int world = plugin.getClient().getWorld();
         PlayerVerificationStatus status = plugin.getPlayerVerificationStatus(plugin.getConfig().apiKey());
-        int rank = status.getRank();
-        boolean verified = status.isVerified();
 
         this.leader = leaderName;
         this.passphrase = passphrase;
-        members.put(leaderName, new PlayerInfo(leaderName, world, rank, verified, false)); // Updated constructor
-        System.out.println("Party created with leader: " + leaderName + " in world " + world + " with rank " + rank + " and verified: " + verified);
+
+        members.put(leaderName, new PlayerInfo(leaderName, world, status.getRank(), status.isVerified(), false));
+        plugin.getWebSocketClient().sendPartyUpdate(passphrase, members); // Use the new method
+        System.out.println("Party created successfully.");
+
         return true;
     }
 
@@ -79,49 +77,39 @@ public class PartyManager {
         members.remove(playerName);
         System.out.println(playerName + " has left the party.");
 
-        // If the last member leaves, disband the party
         if (members.isEmpty()) {
             disbandParty();
+        } else {
+            plugin.getWebSocketClient().sendPartyUpdate(passphrase, members); // Use the new method
         }
     }
 
 
     private void disbandParty() {
         System.out.println("Party with passphrase " + passphrase + " has been disbanded.");
+        if (passphrase != null) {
+            plugin.getWebSocketClient().sendDisbandParty(passphrase); // Notify server to update Redis
+        }
         this.passphrase = null;
         members.clear();
     }
 
 
+
     public void updatePlayerData(String playerName, int world) {
         PlayerInfo player = members.get(playerName);
         if (player != null) {
-            // Query database for updated verification and rank
-            PlayerVerificationStatus status = plugin.getPlayerVerificationStatus(plugin.getConfig().apiKey());
             player.setWorld(world);
+
+            // Update verification and rank
+            PlayerVerificationStatus status = plugin.getPlayerVerificationStatus(plugin.getConfig().apiKey());
             player.setVerified(status.isVerified());
             player.setRank(status.getRank());
 
-            // Update the API with the new player data
-            JSONObject payload = new JSONObject();
-            payload.put("passphrase", currentPartyPassphrase);
-            payload.put("leader", leader);
-
-            JSONArray memberArray = new JSONArray();
-            for (PlayerInfo member : members.values()) {
-                JSONObject memberData = new JSONObject();
-                memberData.put("name", member.getName());
-                memberData.put("world", member.getWorld());
-                memberData.put("rank", member.getRank());
-                memberData.put("verified", member.isVerified());
-                memberData.put("confirmedSplit", member.isConfirmedSplit());
-                memberArray.put(memberData);
-            }
-
-            payload.put("members", memberArray);
-            plugin.getWebSocketClient().send("party_update", payload.toString());
+            plugin.getWebSocketClient().sendPartyUpdate(passphrase, members); // Send updated data to Redis
         }
     }
+
 
 
 
@@ -134,11 +122,8 @@ public class PartyManager {
     public void toggleSplitConfirmation(String playerName) {
         PlayerInfo player = members.get(playerName);
         if (player != null) {
-            boolean currentStatus = player.isConfirmedSplit();
-            player.setConfirmedSplit(!currentStatus); // Toggle the status
-            System.out.println(playerName + "'s split confirmation toggled to: " + !currentStatus);
-        } else {
-            System.out.println("Player not found in party: " + playerName);
+            player.setConfirmedSplit(!player.isConfirmedSplit()); // Toggle
+            plugin.getWebSocketClient().sendPartyUpdate(passphrase, members); // Send updated data to Redis
         }
     }
 
@@ -165,7 +150,7 @@ public class PartyManager {
 
 
     public void addMember(PlayerInfo playerInfo) {
-        if (playerInfo == null || playerInfo.getName() == null) {
+        if (playerInfo == null || playerInfo.getName() == null || playerInfo.getRank() == -1) {
             System.out.println("Warning: Attempted to add null or invalid member.");
             return;
         }
@@ -200,24 +185,40 @@ public class PartyManager {
     public void fetchPartyState(String passphrase) {
         SwingWorker<Void, Void> worker = new SwingWorker<>() {
             @Override
-            protected Void doInBackground() throws Exception {
-                String apiUrl = "http://127.0.0.1:5000/party-status/" + passphrase;
-                String response = HttpUtil.getRequest(apiUrl); // Implement `HttpUtil.getRequest` for GET requests
-                JSONObject partyState = new JSONObject(response);
-                updatePartyFromApi(partyState);
-                return null;
-            }
-
-            @Override
-            protected void done() {
+            protected Void doInBackground() {
                 try {
-                    System.out.println("Party state updated successfully.");
+                    String apiUrl = "http://127.0.0.1:5000/party-status/" + passphrase;
+                    String response = HttpUtil.getRequest(apiUrl);
+                    JSONObject partyState = new JSONObject(response);
+                    updatePartyFromApi(partyState);
                 } catch (Exception e) {
-                    e.printStackTrace();
+                    System.err.println("Failed to fetch party state: " + e.getMessage());
                 }
+                return null;
             }
         };
         worker.execute();
+    }
+
+
+    public void synchronizePartyWithRedis() {
+        JSONObject payload = new JSONObject();
+        payload.put("passphrase", passphrase);
+        payload.put("leader", leader);
+
+        JSONArray memberArray = new JSONArray();
+        for (PlayerInfo member : members.values()) {
+            JSONObject memberData = new JSONObject();
+            memberData.put("name", member.getName());
+            memberData.put("world", member.getWorld());
+            memberData.put("rank", member.getRank());
+            memberData.put("verified", member.isVerified());
+            memberData.put("confirmedSplit", member.isConfirmedSplit());
+            memberArray.put(memberData);
+        }
+
+        payload.put("members", memberArray);
+        plugin.getWebSocketClient().send("party_update", payload.toString());
     }
 
 

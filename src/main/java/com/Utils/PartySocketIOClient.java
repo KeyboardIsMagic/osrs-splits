@@ -214,5 +214,39 @@ public class PartySocketIOClient
         System.out.println("Sent event [" + event + "] with payload: " + payload);
     }
 
+    public void sendPartyUpdate(String passphrase, Map<String, PlayerInfo> members) {
+        JSONObject payload = new JSONObject();
+        payload.put("action", "party_update");
+        payload.put("passphrase", passphrase);
+
+        JSONArray memberArray = new JSONArray();
+        for (PlayerInfo member : members.values()) {
+            JSONObject memberData = new JSONObject();
+            memberData.put("name", member.getName());
+            memberData.put("world", member.getWorld());
+            memberData.put("rank", member.getRank());
+            memberData.put("verified", member.isVerified());
+            memberData.put("confirmedSplit", member.isConfirmedSplit());
+            memberArray.put(memberData);
+        }
+
+        payload.put("members", memberArray);
+
+        socket.emit("party_update", payload.toString());
+        System.out.println("Sent party_update event: " + payload);
+    }
+
+
+
+    public void sendDisbandParty(String passphrase) {
+        JSONObject payload = new JSONObject();
+        payload.put("action", "party_disband");
+        payload.put("passphrase", passphrase);
+
+        // Emit the event
+        socket.emit("party_disband", payload.toString());
+        System.out.println("Sent party_disband event: " + payload);
+    }
+
 
 }

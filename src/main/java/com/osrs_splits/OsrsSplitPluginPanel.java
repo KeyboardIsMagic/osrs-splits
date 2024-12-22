@@ -376,31 +376,18 @@ public class OsrsSplitPluginPanel extends PluginPanel
 
             Map<String, PlayerInfo> members = plugin.getPartyManager().getMembers();
             if (members == null || members.isEmpty()) {
-                JLabel noMembersLabel = new JLabel("No members in the party.");
+                JLabel noMembersLabel = new JLabel("");
                 noMembersLabel.setHorizontalAlignment(SwingConstants.CENTER);
                 memberListPanel.add(noMembersLabel);
             } else {
                 for (PlayerInfo player : members.values()) {
-                    if (player == null || player.getName() == null) {
-                        System.out.println("Skipping null or invalid player.");
-                        continue;
-                    }
-
-                    boolean verified = player.isVerified();
-                    int rank = player.getRank();
-
-                    // Defensive checks for default rank and verified status
-                    if (rank == -1) {
-                        verified = false;
-                    }
-
                     JPanel playerCard = createPlayerCard(
                             player.getName(),
                             player.getWorld(),
-                            verified,
+                            player.isVerified(),
                             player.isConfirmedSplit(),
                             player.getName().equals(plugin.getPartyManager().getLeader()),
-                            rank
+                            player.getRank()
                     );
                     memberListPanel.add(playerCard);
                 }
@@ -410,11 +397,6 @@ public class OsrsSplitPluginPanel extends PluginPanel
             memberListPanel.repaint();
         });
     }
-
-
-
-
-
 
 
 

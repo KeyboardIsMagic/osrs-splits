@@ -16,6 +16,7 @@ import net.runelite.client.config.ConfigManager;
 import net.runelite.client.discord.DiscordService;
 import net.runelite.client.eventbus.EventBus;
 import net.runelite.client.eventbus.Subscribe;
+import net.runelite.client.events.ConfigChanged;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
 import net.runelite.client.ui.ClientToolbar;
@@ -165,30 +166,54 @@ public class OsrsSplitPlugin extends Plugin {
 
 
 
+	@Subscribe
+	public void onConfigChanged(ConfigChanged event) {
+		if (event.getGroup().equals("OsrsSplit") && event.getKey().equals("saveApiKey")) {
+			if (config.saveApiKey()) {
+				saveApiKeyToFile(config.apiKey());
+				System.out.println("API key saved via configuration.");
+			}
+		}
+	}
 
 
 	@Subscribe
 	public void onWorldChanged(WorldChanged event) {
 		long currentTime = System.currentTimeMillis();
-		if (currentTime - lastWorldChange < 3000) { // Throttle updates to every 5 seconds
+		if (currentTime - lastWorldChange < 3000) { // Throttle updates to every 3 seconds
 			return;
 		}
 		lastWorldChange = currentTime;
 
-		if (client.getLocalPlayer() != null) { // Access client directly
-			String playerName = client.getLocalPlayer().getName();
-			int newWorld = client.getWorld();
+		SwingWorker<Void, Void> worker = new SwingWorker<>() {
+			@Override
+			protected Void doInBackground() {
+				String playerName = client.getLocalPlayer().getName();
+				int newWorld = client.getWorld();
 
-			partyManager.updatePlayerData(playerName, newWorld);
-			panel.sendPartyUpdate(); // Broadcast changes
-			panel.updatePartyMembers(); // Refresh UI
-		}
+				// Update player data
+				partyManager.updatePlayerData(playerName, newWorld);
+				return null;
+			}
+
+			@Override
+			protected void done() {
+				panel.updatePartyMembers(); // Refresh UI
+			}
+		};
+		worker.execute();
 	}
 
 
-	private void saveApiKeyToFile(String apiKey) {
+
+
+
+
+
+
+	public static void saveApiKeyToFile(String apiKey) {
 		if (apiKey == null || apiKey.isEmpty()) {
-			System.out.println("No API key to save.");
+			System.out.println("API key is empty. User will not be verified.");
 			return;
 		}
 
@@ -210,6 +235,7 @@ public class OsrsSplitPlugin extends Plugin {
 		}
 	}
 
+
 	public PartySocketIOClient getWebSocketClient() {
 		return socketIoClient; // Correct variable name
 	}
@@ -217,12 +243,12 @@ public class OsrsSplitPlugin extends Plugin {
 
 
 	public PlayerVerificationStatus getPlayerVerificationStatus(String apiKey) {
-		String playerName = client.getLocalPlayer().getName();
-		PlayerVerificationStatus cachedStatus = partyManager.getCachedVerification(playerName);
-		if (cachedStatus != null) {
-			return cachedStatus; // Return cached status if available
+		if (apiKey == null || apiKey.isEmpty()) {
+			System.out.println("API key is missing. User will not be verified.");
+			return new PlayerVerificationStatus("Unknown", false, -1); // Default to not verified
 		}
 
+		String playerName = client.getLocalPlayer().getName();
 		JSONObject payload = new JSONObject();
 		payload.put("apiKey", apiKey);
 
@@ -231,18 +257,16 @@ public class OsrsSplitPlugin extends Plugin {
 			JSONObject jsonResponse = new JSONObject(response);
 
 			boolean verified = jsonResponse.optBoolean("verified", false);
-			int rank = -1;  // Default rank
+			int rank = -1; // Default rank
 			if (verified) {
 				JSONArray rsnData = jsonResponse.optJSONArray("rsnData");
 				if (rsnData != null) {
 					for (int i = 0; i < rsnData.length(); i++) {
 						JSONObject rsnObject = rsnData.getJSONObject(i);
-						rank = rsnObject.optInt("rank", -1);  // Default rank is -1
+						rank = rsnObject.optInt("rank", -1); // Default rank is -1
 						String rsn = rsnObject.optString("rsn");
 
-						PlayerVerificationStatus status = new PlayerVerificationStatus(rsn, true, rank);
-						partyManager.cacheVerification(rsn, status); // Cache the result
-						return status;
+						return new PlayerVerificationStatus(rsn, true, rank);
 					}
 				}
 			}
@@ -253,6 +277,7 @@ public class OsrsSplitPlugin extends Plugin {
 			return new PlayerVerificationStatus(playerName, false, -1); // Unverified with default rank
 		}
 	}
+
 
 
 
