@@ -99,16 +99,18 @@ public class PartyManager {
     public void updatePlayerData(String playerName, int world) {
         PlayerInfo player = members.get(playerName);
         if (player != null) {
+            PlayerVerificationStatus cachedStatus = getCachedVerification(playerName);
+            if (cachedStatus == null || cachedStatus.getRank() == -1) {
+                PlayerVerificationStatus status = plugin.getPlayerVerificationStatus(plugin.getConfig().apiKey());
+                cacheVerification(playerName, status);
+                player.setVerified(status.isVerified());
+                player.setRank(status.getRank());
+            }
             player.setWorld(world);
-
-            // Update verification and rank
-            PlayerVerificationStatus status = plugin.getPlayerVerificationStatus(plugin.getConfig().apiKey());
-            player.setVerified(status.isVerified());
-            player.setRank(status.getRank());
-
-            plugin.getWebSocketClient().sendPartyUpdate(passphrase, members); // Send updated data to Redis
+            synchronizePartyWithRedis(); // Ensure Redis reflects the updated data
         }
     }
+
 
 
 
@@ -122,8 +124,13 @@ public class PartyManager {
     public void toggleSplitConfirmation(String playerName) {
         PlayerInfo player = members.get(playerName);
         if (player != null) {
-            player.setConfirmedSplit(!player.isConfirmedSplit()); // Toggle
-            plugin.getWebSocketClient().sendPartyUpdate(passphrase, members); // Send updated data to Redis
+            boolean currentStatus = player.isConfirmedSplit();
+            player.setConfirmedSplit(!currentStatus);
+
+            System.out.println(playerName + "'s split confirmation toggled to: " + !currentStatus);
+            synchronizePartyWithRedis(); // Notify server of changes
+        } else {
+            System.out.println("Player not found in party: " + playerName);
         }
     }
 
@@ -203,10 +210,10 @@ public class PartyManager {
 
     public void synchronizePartyWithRedis() {
         JSONObject payload = new JSONObject();
-        payload.put("passphrase", passphrase);
+        payload.put("passphrase", currentPartyPassphrase);
         payload.put("leader", leader);
 
-        JSONArray memberArray = new JSONArray();
+        JSONArray membersArray = new JSONArray();
         for (PlayerInfo member : members.values()) {
             JSONObject memberData = new JSONObject();
             memberData.put("name", member.getName());
@@ -214,10 +221,10 @@ public class PartyManager {
             memberData.put("rank", member.getRank());
             memberData.put("verified", member.isVerified());
             memberData.put("confirmedSplit", member.isConfirmedSplit());
-            memberArray.put(memberData);
+            membersArray.put(memberData);
         }
 
-        payload.put("members", memberArray);
+        payload.put("members", membersArray);
         plugin.getWebSocketClient().send("party_update", payload.toString());
     }
 
@@ -261,5 +268,19 @@ public class PartyManager {
     public void cacheVerification(String playerName, PlayerVerificationStatus status) {
         verificationCache.put(playerName, status);
     }
+
+
+    public void setLeader(String leader) {
+        if (leader == null || leader.isEmpty()) {
+            System.out.println("Leader cannot be null or empty.");
+            this.leader = null;
+        } else {
+            this.leader = leader;
+            System.out.println("Leader updated to: " + leader);
+        }
+    }
+
+
+
 
 }

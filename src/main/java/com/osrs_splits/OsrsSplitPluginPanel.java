@@ -189,7 +189,12 @@ public class OsrsSplitPluginPanel extends PluginPanel
             protected Void doInBackground() {
                 try {
                     // Use the new Socket.IO method to join a party
-                    plugin.getWebSocketClient().sendJoinParty(passphrase, playerName);
+                    plugin.getWebSocketClient().sendJoinParty(
+                            passphrase,
+                            playerName,
+                            plugin.getClient().getWorld(), // Current world
+                            plugin.getConfig().apiKey()   // API key for verification
+                    );
 
                     // Retrieve the party details from the server or WebSocket
                     Map<String, PlayerInfo> updatedMembers = plugin.getPartyManager().getMembers(); // Or use server data
@@ -368,15 +373,13 @@ public class OsrsSplitPluginPanel extends PluginPanel
 
 
 
-
-
     public void updatePartyMembers() {
         SwingUtilities.invokeLater(() -> {
             memberListPanel.removeAll();
 
             Map<String, PlayerInfo> members = plugin.getPartyManager().getMembers();
             if (members == null || members.isEmpty()) {
-                JLabel noMembersLabel = new JLabel("");
+                JLabel noMembersLabel = new JLabel("No party members found.");
                 noMembersLabel.setHorizontalAlignment(SwingConstants.CENTER);
                 memberListPanel.add(noMembersLabel);
             } else {
@@ -397,12 +400,6 @@ public class OsrsSplitPluginPanel extends PluginPanel
             memberListPanel.repaint();
         });
     }
-
-
-
-
-
-
 
 
 

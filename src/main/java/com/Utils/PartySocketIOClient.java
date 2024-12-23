@@ -6,6 +6,7 @@ import io.socket.client.IO;
 import io.socket.client.Socket;
 import io.socket.emitter.Emitter;
 import org.json.JSONArray;
+import org.json.JSONException;
 import org.json.JSONObject;
 import java.util.Timer;
 import java.util.TimerTask;
@@ -84,16 +85,17 @@ public class PartySocketIOClient
 
 
 
-    public void sendJoinParty(String passphrase, String rsn) {
-        // Emit 'join-party' event with JSON payload
+    public void sendJoinParty(String passphrase, String rsn, int world, String apiKey) {
         JSONObject payload = new JSONObject();
         payload.put("passphrase", passphrase);
         payload.put("rsn", rsn);
+        payload.put("world", world);
+        payload.put("apiKey", apiKey); // Include the API key for server verification
 
         socket.emit("join-party", payload);
         System.out.println("Sent join-party event with payload: " + payload);
-
     }
+
 
     public void disconnect() {
         if (socket != null && socket.connected()) {
@@ -107,52 +109,47 @@ public class PartySocketIOClient
     private void processPartyUpdate(Object data) {
         try {
             JSONObject json = new JSONObject(data.toString());
-            String action = json.getString("action");
 
-            if ("party_disband".equals(action)) {
-                System.out.println("Party disbanded: " + json.getString("passphrase"));
-                SwingUtilities.invokeLater(() -> {
-                    plugin.getPartyManager().clearMembers();
-                    plugin.getPanel().updatePartyMembers();
-                    JOptionPane.showMessageDialog(null, "Party has been disbanded.", "Party Disbanded", JOptionPane.INFORMATION_MESSAGE);
-                });
-                return; // No further processing needed for disband action
-            }
-
-            if (!"party_update".equals(action)) {
-                System.out.println("Unknown action: " + action);
-                return;
-            }
-
-            // Process party_update action
             String passphrase = json.getString("passphrase");
             if (!passphrase.equals(plugin.getPartyManager().getCurrentPartyPassphrase())) {
                 System.out.println("Ignoring update for mismatched passphrase.");
                 return;
             }
 
-            JSONArray membersArray = json.getJSONArray("members");
+            JSONArray membersArray = json.optJSONArray("members");
+            if (membersArray == null) {
+                System.err.println("No members array in the party update payload.");
+                return;
+            }
+
+            String leader = json.optString("leader", null);
+
             Map<String, PlayerInfo> updatedMembers = new HashMap<>();
             for (int i = 0; i < membersArray.length(); i++) {
                 JSONObject memberJson = membersArray.getJSONObject(i);
                 PlayerInfo playerInfo = new PlayerInfo(
                         memberJson.getString("name"),
-                        memberJson.getInt("world"),
-                        memberJson.getInt("rank"),
-                        memberJson.getBoolean("verified"),
-                        memberJson.getBoolean("confirmedSplit")
+                        memberJson.optInt("world", -1),
+                        memberJson.optInt("rank", -1),
+                        memberJson.optBoolean("verified", false),
+                        memberJson.optBoolean("confirmedSplit", false)
                 );
                 updatedMembers.put(playerInfo.getName(), playerInfo);
             }
 
             SwingUtilities.invokeLater(() -> {
-                plugin.getPartyManager().setMembers(updatedMembers);
+                plugin.getPartyManager().updateCurrentParty(passphrase, updatedMembers);
+                plugin.getPartyManager().setLeader(leader); // Update leader
                 plugin.getPanel().updatePartyMembers();
             });
-        } catch (Exception e) {
+        } catch (JSONException e) {
+            System.err.println("Error processing party update: " + e.getMessage());
             e.printStackTrace();
         }
     }
+
+
+
 
 
 
@@ -202,11 +199,14 @@ public class PartySocketIOClient
             if (plugin.getPartyManager().getCurrentPartyPassphrase() != null) {
                 sendJoinParty(
                         plugin.getPartyManager().getCurrentPartyPassphrase(),
-                        plugin.getClient().getLocalPlayer().getName()
+                        plugin.getClient().getLocalPlayer().getName(),
+                        plugin.getClient().getWorld(), // Add the current world
+                        plugin.getConfig().apiKey()    // Add the API key
                 );
             }
         }
     }
+
 
 
     public void send(String event, String payload) {
