@@ -14,7 +14,10 @@ import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.events.NpcLootReceived;
 import net.runelite.client.game.ItemStack;
 import net.runelite.client.ui.PluginPanel;
+import java.util.List;
+import java.util.ArrayList;
 import net.runelite.discord.DiscordUser;
+import org.apache.commons.lang3.ArrayUtils;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -52,8 +55,8 @@ public class OsrsSplitPluginPanel extends PluginPanel
     private Instant lastScreenshotTime = Instant.EPOCH;
 
     private final OsrsSplitPlugin plugin;
-    private static final int TARGET_NPC_ID = 3031; // goblin
-    private static final int[] SPECIAL_ITEM_IDS = {526}; // Bones item ID for testing
+    private static final int TARGET_NPC_ID = 3031; // goblin - DONT FORGET TO REMOVE THE BONES
+    private static final int[] SPECIAL_ITEM_IDS = {526, 26370, 26372, 26374, 26376, 26378, 26380}; // Added Unique Items (REMOVE BONES)****
 
 
 
@@ -659,7 +662,7 @@ public class OsrsSplitPluginPanel extends PluginPanel
 
 
     /********************
-        SCREEN SHOTTING
+     SCREEN SHOTTING
      ********************/
 
     private void attemptScreenshot(Runnable afterScreenshot)
@@ -675,21 +678,21 @@ public class OsrsSplitPluginPanel extends PluginPanel
     }
 
 
-// popup notification
-private void showScreenshotNotification()
-{
-    JOptionPane.showMessageDialog(this, "Screenshot taken and saved!", "Screenshot", JOptionPane.INFORMATION_MESSAGE);
-}
-private void screenshotAndUpload()
-{
-    try {
-        BufferedImage screenshot = captureScreenshot();
-        File screenshotFile = saveScreenshot(screenshot);
-        uploadToDiscord(screenshotFile);
-    } catch (IOException | AWTException e) {
-        e.printStackTrace();
+    // popup notification
+    private void showScreenshotNotification()
+    {
+        JOptionPane.showMessageDialog(this, "Screenshot taken and saved!", "Screenshot", JOptionPane.INFORMATION_MESSAGE);
     }
-}
+    private void screenshotAndUpload()
+    {
+        try {
+            BufferedImage screenshot = captureScreenshot();
+            File screenshotFile = saveScreenshot(screenshot);
+            uploadToDiscord(screenshotFile);
+        } catch (IOException | AWTException e) {
+            e.printStackTrace();
+        }
+    }
 
     private BufferedImage captureScreenshot() throws AWTException
     {
@@ -730,9 +733,12 @@ private void screenshotAndUpload()
         // Write the image to the specified path
         ImageIO.write(screenshot, "png", screenshotFile);
 
+        String screenshotPath = screenshotFile.getAbsolutePath();
+
         System.out.println("Screenshot saved at: " + screenshotFile.getAbsolutePath()); // Debug
 
         return screenshotFile;
+//        return screenshotPath;
     }
 
 
@@ -741,6 +747,22 @@ private void screenshotAndUpload()
     {
         System.out.println("Uploading " + screenshotFile.getName() + " to Discord...");
         // Discord API go here
+
+    }
+
+    // Get name for unique item (Could do this on API Side)
+    private String getUniqueItem(int uniqueItem) {
+        switch (uniqueItem) {
+            case 526: return "Bones";
+            case 26370: return "Ancient hilt";
+            case 26372: return "Nihil Horn";
+            case 26374: return "Zaryte vambraces";
+            case 26376: return "Torva full helm (damaged)";
+            case 26378: return "Torva platebody (damaged)";
+            case 26380: return "Torva platelegs (damaged)";
+
+            default: return null;
+        }
     }
 
     // Drop detection
@@ -770,6 +792,8 @@ private void screenshotAndUpload()
                 // Check if the item is unique drop
                 if (isSpecialItem(itemStack.getId()))
                 {
+                    int uniqueItem = itemStack.getId();
+
                     System.out.println("Unique item drop detected from target NPC!");
 
                     // Delay before taking the screenshot to allow the item to render on the ground
@@ -778,19 +802,31 @@ private void screenshotAndUpload()
                         {
                             Thread.sleep(1000);
 
+                            // Get list of players in party
+                            List<String> partyList = new ArrayList<>(plugin.getPartyManager().getMembers().keySet());
+
+                            // Get leader of party (is it needed)
+                            String leader = plugin.getPartyManager().getLeader();
+
                             //  Screenshot
                             BufferedImage screenshot = captureScreenshot();
                             File screenshotFile = saveScreenshot(screenshot);
                             uploadToDiscord(screenshotFile);
 
+                            // I don't think this should be added in production or just give a chat notification vs a pop-up?
                             // Send notification to user
                             SwingUtilities.invokeLater(() -> showScreenshotNotification("Screenshot taken and uploaded to Discord!"));
 
                             System.out.println("Screenshot taken and uploaded after delay.");
+
+                            // API POST Call to post to discord
+                            HttpUtil.uniqueDropAPI("http://127.0.0.1:8000/on-drop/", partyList, leader, getUniqueItem(uniqueItem), screenshotFile);
                         }
                         catch (InterruptedException | IOException | AWTException e)
                         {
                             e.printStackTrace();
+                        } catch (Exception e) {
+                            throw new RuntimeException(e);
                         }
                     }).start();
 
@@ -799,6 +835,7 @@ private void screenshotAndUpload()
             }
         }
     }
+
 
 
     private void showScreenshotNotification(String message)
