@@ -318,7 +318,8 @@ public class PartySocketIOClient
 
 
 
-    public void fetchBatchVerification(Set<String> rsns, String apiKey) {
+    public void fetchBatchVerification(Set<String> rsns, String apiKey)
+    {
         if (apiKey == null || apiKey.isEmpty()) {
             System.out.println("API key is missing. Cannot verify RSNs.");
             return;
@@ -343,8 +344,27 @@ public class PartySocketIOClient
                             boolean verified = rsnObject.optBoolean("verified", false);
 
                             if (name != null) {
-                                PlayerInfo playerInfo = new PlayerInfo(name, -1, rank, verified, false);
-                                plugin.getPartyManager().addMember(playerInfo);
+                                // 1) See if we already have a record for that user:
+                                PlayerInfo existing = plugin.getPartyManager().getMembers().get(name);
+
+                                if (existing != null) {
+                                    // Keep existing world, just update rank & verified
+                                    existing.setRank(rank);
+                                    existing.setVerified(verified);
+                                }
+                                else {
+                                    // 2) If it's the local user, we can store the real local world
+                                    int realWorld = -1;
+                                    if (plugin.getClient().getLocalPlayer() != null
+                                            && name.equalsIgnoreCase(plugin.getClient().getLocalPlayer().getName()))
+                                    {
+                                        realWorld = plugin.getClient().getWorld();
+                                    }
+
+                                    // Create new record, using either the realWorld or -1 as fallback
+                                    PlayerInfo newInfo = new PlayerInfo(name, realWorld, rank, verified, false);
+                                    plugin.getPartyManager().addMember(newInfo);
+                                }
                             } else {
                                 System.err.println("Invalid RSN data: missing or null name.");
                             }
@@ -361,13 +381,16 @@ public class PartySocketIOClient
             } else {
                 System.err.println("Batch verification failed or unverified.");
             }
+
             // Immediately update UI
-                plugin.getPanel().updatePartyMembers();
-        } catch (Exception e) {
+            plugin.getPanel().updatePartyMembers();
+        }
+        catch (Exception e) {
             e.printStackTrace();
             System.err.println("Failed to fetch batch verification: " + e.getMessage());
         }
     }
+
 
 
 
