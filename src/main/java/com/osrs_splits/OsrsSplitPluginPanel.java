@@ -469,7 +469,7 @@ public class OsrsSplitPluginPanel extends PluginPanel
                 else
                 {
                     screenshotButton.setEnabled(false);
-                    screenshotButton.setToolTipText("Screenshots can only be sent by the party leader (Blue).");
+                    screenshotButton.setToolTipText("Screenshots can only be sent by the party leader (Orange).");
                 }
 
                 // Build the member cards
