@@ -33,6 +33,6 @@ public interface OsrsSplitsConfig extends Config
 			section = apiConfigSection
 	)
 	default boolean saveApiKey() {
-		return false; // Default to false, acts as a trigger
+		return false; // Default to false, acts as trigger
 	}
 }

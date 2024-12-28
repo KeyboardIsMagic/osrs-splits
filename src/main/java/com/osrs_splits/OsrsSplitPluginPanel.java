@@ -159,11 +159,6 @@ public class OsrsSplitPluginPanel extends PluginPanel
                     plugin.getPartyManager().createParty(playerName, passphrase);
                     plugin.getPartyManager().setCurrentPartyPassphrase(passphrase);
 
-                    // IMPORTANT: We no longer force a local member with rank=0 here.
-                    // We'll wait for the server's broadcast to tell us the correct rank.
-                    // If you want to set an empty local map, you can do:
-                    // plugin.getPartyManager().clearMembers();
-                    // But typically we wait for party_update from the server.
                 }
                 catch (Exception e)
                 {
@@ -254,8 +249,7 @@ public class OsrsSplitPluginPanel extends PluginPanel
             @Override
             protected void done()
             {
-                // Do NOT display success here. We wait for the server's "response" event
-                // If the server says "joinPartyError," we'll show an error instead.
+                //
             }
         };
 
@@ -664,11 +658,10 @@ public class OsrsSplitPluginPanel extends PluginPanel
 
 
 
+    /********************
+        SCREEN SHOTTING
+     ********************/
 
-
-    ////////////////////////////////////////////////////////////////////////
-//                         SCREEN SHOTTING
-///////////////////////////////////////////////////////////////////////
     private void attemptScreenshot(Runnable afterScreenshot)
     {
         try {

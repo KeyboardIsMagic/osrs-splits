@@ -192,7 +192,6 @@ public class OsrsSplitPlugin extends Plugin {
 		int newWorld = client.getWorld();
 		if (newWorld < 1)
 		{
-			// If it's 0 or -1, we skip updating because it's a transient loading value
 			System.out.println("Skipping world update because newWorld = " + newWorld);
 			return;
 		}
@@ -250,7 +249,7 @@ public class OsrsSplitPlugin extends Plugin {
 
 
 	public PartySocketIOClient getWebSocketClient() {
-		return socketIoClient; // Correct variable name
+		return socketIoClient;
 	}
 
 

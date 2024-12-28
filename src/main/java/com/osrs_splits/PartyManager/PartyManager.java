@@ -215,37 +215,6 @@ public class PartyManager {
     }
 
 
-//    public void updatePartyFromApi(JSONObject partyState) {
-//        String passphrase = partyState.getString("passphrase");
-//        if (!passphrase.equals(currentPartyPassphrase)) {
-//            System.out.println("Ignored update for mismatched passphrase.");
-//            return; // Ignore updates for other passphrases
-//        }
-//
-//        JSONArray membersArray = partyState.getJSONArray("members");
-//        Map<String, PlayerInfo> updatedMembers = new HashMap<>();
-//
-//        for (int i = 0; i < membersArray.length(); i++) {
-//            JSONObject memberData = membersArray.getJSONObject(i);
-//            String name = memberData.optString("name", null);
-//            if (name == null) {
-//                System.out.println("Skipped member with null name.");
-//                continue;
-//            }
-//
-//            int world = memberData.optInt("world", -1);
-//            boolean verified = memberData.optBoolean("verified", false);
-//            int rank = memberData.optInt("rank", 0);
-//            boolean confirmedSplit = memberData.optBoolean("confirmedSplit", false);
-//
-//            PlayerInfo playerInfo = new PlayerInfo(name, world, rank, verified, confirmedSplit);
-//            updatedMembers.put(name, playerInfo);
-//        }
-//
-//        this.members.clear();
-//        this.members.putAll(updatedMembers);
-//        System.out.println("Party updated for passphrase: " + currentPartyPassphrase);
-//    }
 
     public PlayerVerificationStatus getCachedVerification(String playerName) {
         return verificationCache.get(playerName);
