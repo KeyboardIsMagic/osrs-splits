@@ -254,7 +254,12 @@ public class OsrsSplitPluginPanel extends PluginPanel
 
             @Override
             protected void done() {
-                plugin.getPartyManager().leaveParty(playerName);
+                // Clear party data
+                plugin.getPartyManager().clearMembers();
+                plugin.getPartyManager().setCurrentPartyPassphrase(null);
+                plugin.getPartyManager().setLeader(null);
+
+                // Update UI
                 leavePartyButton.setVisible(false);
                 passphraseLabel.setVisible(false);
                 screenshotButton.setVisible(false);
@@ -272,6 +277,7 @@ public class OsrsSplitPluginPanel extends PluginPanel
 
         worker.execute();
     }
+
 
 
 
@@ -313,7 +319,7 @@ public class OsrsSplitPluginPanel extends PluginPanel
         gbc.weightx = 1.0;
         JLabel nameLabel = new JLabel(playerName + (isLeader ? " (Leader)" : ""));
         nameLabel.setFont(nameLabel.getFont().deriveFont(Font.BOLD));
-        nameLabel.setForeground(isLeader ? Color.BLUE : Color.BLACK);
+        nameLabel.setForeground(isLeader ? Color.BLUE : Color.GRAY);
 
         // Add rank icon next to the player's name
         if (rank >= 0) {
@@ -350,13 +356,8 @@ public class OsrsSplitPluginPanel extends PluginPanel
         // Row 3: Split Confirmation Button and Status
         gbc.gridx = 0;
         gbc.gridy = 2;
-        JButton confirmButton = new JButton("Confirm Split");
+        JButton confirmButton = createConfirmSplitButton(playerName);
         confirmButton.setPreferredSize(new Dimension(110, 20));
-        confirmButton.addActionListener(e -> {
-            plugin.getPartyManager().toggleSplitConfirmation(playerName); // Toggle confirmation status
-            updatePartyMembers(); // Refresh the UI
-            screenshotButton.setEnabled(plugin.getPartyManager().allPlayersConfirmedAndSameWorld());
-        });
         cardPanel.add(confirmButton, gbc);
 
         gbc.gridx = 1;
@@ -377,12 +378,13 @@ public class OsrsSplitPluginPanel extends PluginPanel
         SwingUtilities.invokeLater(() -> {
             memberListPanel.removeAll();
 
-            Map<String, PlayerInfo> members = plugin.getPartyManager().getMembers();
-            if (members == null || members.isEmpty()) {
-                JLabel noMembersLabel = new JLabel("No party members found.");
-                noMembersLabel.setHorizontalAlignment(SwingConstants.CENTER);
-                memberListPanel.add(noMembersLabel);
+            String currentPassphrase = plugin.getPartyManager().getCurrentPartyPassphrase();
+            if (currentPassphrase == null || plugin.getPartyManager().getMembers().isEmpty()) {
+                JLabel noPartyLabel = new JLabel("No active party.");
+                noPartyLabel.setHorizontalAlignment(SwingConstants.CENTER);
+                memberListPanel.add(noPartyLabel);
             } else {
+                Map<String, PlayerInfo> members = plugin.getPartyManager().getMembers();
                 for (PlayerInfo player : members.values()) {
                     JPanel playerCard = createPlayerCard(
                             player.getName(),
@@ -400,6 +402,7 @@ public class OsrsSplitPluginPanel extends PluginPanel
             memberListPanel.repaint();
         });
     }
+
 
 
 
@@ -520,6 +523,46 @@ public class OsrsSplitPluginPanel extends PluginPanel
         plugin.getWebSocketClient().send("party_update", payload.toString());
         System.out.println("Party update payload sent successfully: " + payload);
     }
+
+
+    private JButton createConfirmSplitButton(String playerName) {
+        JButton confirmButton = new JButton("Confirm Split");
+
+        // Disable the button if the player is not the local player
+        if (!playerName.equals(plugin.getClient().getLocalPlayer().getName())) {
+            confirmButton.setEnabled(false);
+            return confirmButton;
+        }
+
+        confirmButton.addActionListener(e -> {
+            SwingWorker<Void, Void> worker = new SwingWorker<>() {
+                @Override
+                protected Void doInBackground() {
+                    try {
+                        // Send the toggle-confirm-split request to the server
+                        JSONObject payload = new JSONObject()
+                                .put("passphrase", plugin.getPartyManager().getCurrentPartyPassphrase())
+                                .put("rsn", plugin.getClient().getLocalPlayer().getName())
+                                .put("apiKey", plugin.getConfig().apiKey());
+                        plugin.getWebSocketClient().send("toggle-confirm-split", payload.toString());
+                    } catch (Exception ex) {
+                        ex.printStackTrace();
+                    }
+                    return null;
+                }
+
+                @Override
+                protected void done() {
+                    System.out.println("Sent toggle-confirm-split to server. Waiting for broadcast update.");
+                }
+            };
+            worker.execute();
+        });
+
+        return confirmButton;
+    }
+
+
 
 
 

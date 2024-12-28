@@ -1,6 +1,5 @@
 package com.osrs_splits.PartyManager;
 
-import com.Utils.HttpUtil;
 import com.Utils.PlayerVerificationStatus;
 import com.osrs_splits.OsrsSplitPlugin;
 import com.osrs_splits.OsrsSplitsConfig;
@@ -62,11 +61,19 @@ public class PartyManager {
 
 
     public void updateCurrentParty(String passphrase, Map<String, PlayerInfo> members) {
+        if (passphrase == null || members == null) {
+            System.err.println("Invalid update: passphrase or members map is null.");
+            return;
+        }
+
         this.currentPartyPassphrase = passphrase;
-        this.members.clear();
-        this.members.putAll(members);
-        System.out.println("Updated current party: " + passphrase + " with members: " + members.size());
+        this.members.clear(); // Clear old data
+        this.members.putAll(members); // Add new data
+
+        System.out.println("Updated party: " + passphrase + " with members: " + members.size());
     }
+
+
 
     public void leaveParty(String playerName) {
         if (!members.containsKey(playerName)) {
@@ -157,17 +164,14 @@ public class PartyManager {
 
 
     public void addMember(PlayerInfo playerInfo) {
-        if (playerInfo == null || playerInfo.getName() == null || playerInfo.getRank() == -1) {
-            System.out.println("Warning: Attempted to add null or invalid member.");
+        if (playerInfo == null || playerInfo.getName() == null || playerInfo.getRank() < 0) {
+            System.err.println("Warning: Attempted to add null or invalid member.");
             return;
         }
-        if (!members.containsKey(playerInfo.getName())) {
-            members.put(playerInfo.getName(), playerInfo);
-            System.out.println("Member added: " + playerInfo.getName());
-        } else {
-            System.out.println("Member already exists: " + playerInfo.getName());
-        }
+        members.put(playerInfo.getName(), playerInfo);
+        System.out.println("Added member: " + playerInfo.getName());
     }
+
 
 
     public void setMembers(Map<String, PlayerInfo> updatedMembers) {
@@ -188,24 +192,6 @@ public class PartyManager {
         return members;
     }
 
-
-    public void fetchPartyState(String passphrase) {
-        SwingWorker<Void, Void> worker = new SwingWorker<>() {
-            @Override
-            protected Void doInBackground() {
-                try {
-                    String apiUrl = "http://127.0.0.1:5000/party-status/" + passphrase;
-                    String response = HttpUtil.getRequest(apiUrl);
-                    JSONObject partyState = new JSONObject(response);
-                    updatePartyFromApi(partyState);
-                } catch (Exception e) {
-                    System.err.println("Failed to fetch party state: " + e.getMessage());
-                }
-                return null;
-            }
-        };
-        worker.execute();
-    }
 
 
     public void synchronizePartyWithRedis() {
@@ -229,37 +215,37 @@ public class PartyManager {
     }
 
 
-    public void updatePartyFromApi(JSONObject partyState) {
-        String passphrase = partyState.getString("passphrase");
-        if (!passphrase.equals(currentPartyPassphrase)) {
-            System.out.println("Ignored update for mismatched passphrase.");
-            return; // Ignore updates for other passphrases
-        }
-
-        JSONArray membersArray = partyState.getJSONArray("members");
-        Map<String, PlayerInfo> updatedMembers = new HashMap<>();
-
-        for (int i = 0; i < membersArray.length(); i++) {
-            JSONObject memberData = membersArray.getJSONObject(i);
-            String name = memberData.optString("name", null);
-            if (name == null) {
-                System.out.println("Skipped member with null name.");
-                continue;
-            }
-
-            int world = memberData.optInt("world", -1);
-            boolean verified = memberData.optBoolean("verified", false);
-            int rank = memberData.optInt("rank", 0);
-            boolean confirmedSplit = memberData.optBoolean("confirmedSplit", false);
-
-            PlayerInfo playerInfo = new PlayerInfo(name, world, rank, verified, confirmedSplit);
-            updatedMembers.put(name, playerInfo);
-        }
-
-        this.members.clear();
-        this.members.putAll(updatedMembers);
-        System.out.println("Party updated for passphrase: " + currentPartyPassphrase);
-    }
+//    public void updatePartyFromApi(JSONObject partyState) {
+//        String passphrase = partyState.getString("passphrase");
+//        if (!passphrase.equals(currentPartyPassphrase)) {
+//            System.out.println("Ignored update for mismatched passphrase.");
+//            return; // Ignore updates for other passphrases
+//        }
+//
+//        JSONArray membersArray = partyState.getJSONArray("members");
+//        Map<String, PlayerInfo> updatedMembers = new HashMap<>();
+//
+//        for (int i = 0; i < membersArray.length(); i++) {
+//            JSONObject memberData = membersArray.getJSONObject(i);
+//            String name = memberData.optString("name", null);
+//            if (name == null) {
+//                System.out.println("Skipped member with null name.");
+//                continue;
+//            }
+//
+//            int world = memberData.optInt("world", -1);
+//            boolean verified = memberData.optBoolean("verified", false);
+//            int rank = memberData.optInt("rank", 0);
+//            boolean confirmedSplit = memberData.optBoolean("confirmedSplit", false);
+//
+//            PlayerInfo playerInfo = new PlayerInfo(name, world, rank, verified, confirmedSplit);
+//            updatedMembers.put(name, playerInfo);
+//        }
+//
+//        this.members.clear();
+//        this.members.putAll(updatedMembers);
+//        System.out.println("Party updated for passphrase: " + currentPartyPassphrase);
+//    }
 
     public PlayerVerificationStatus getCachedVerification(String playerName) {
         return verificationCache.get(playerName);

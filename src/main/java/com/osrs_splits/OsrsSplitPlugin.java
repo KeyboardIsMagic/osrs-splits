@@ -34,6 +34,8 @@ import org.json.JSONObject;
 import javax.inject.Inject;
 import javax.swing.*;
 import java.awt.image.BufferedImage;
+import java.util.Collections;
+import java.util.Set;
 
 @PluginDescriptor(
 		name = "1Nex Splits Kodai"
@@ -140,30 +142,24 @@ public class OsrsSplitPlugin extends Plugin {
 	@Subscribe
 	public void onGameStateChanged(GameStateChanged event) {
 		if (event.getGameState() == GameState.LOGGED_IN) {
+			String playerName = client.getLocalPlayer().getName();
+			String apiKey = config.apiKey();
+
 			SwingWorker<Void, Void> worker = new SwingWorker<>() {
 				@Override
 				protected Void doInBackground() {
-					String playerName = client.getLocalPlayer().getName();
-					int world = client.getWorld();
-
-					// Verify player using the API
-					PlayerVerificationStatus status = getPlayerVerificationStatus(config.apiKey());
-					if (status.isVerified()) {
-						PlayerInfo playerInfo = new PlayerInfo(playerName, world, status.getRank(), status.isVerified(), false);
-						partyManager.addMember(playerInfo); // Add/update player data
-					}
+					socketIoClient.fetchBatchVerification(Collections.singleton(playerName), apiKey);
 					return null;
 				}
 
 				@Override
 				protected void done() {
-					panel.updatePartyMembers(); // Directly access the panel
+					System.out.println("Player verification cached for " + playerName);
 				}
 			};
 			worker.execute();
 		}
 	}
-
 
 
 	@Subscribe

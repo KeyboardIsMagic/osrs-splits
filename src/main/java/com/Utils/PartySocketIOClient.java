@@ -6,16 +6,15 @@ import io.socket.client.IO;
 import io.socket.client.Socket;
 import io.socket.emitter.Emitter;
 import org.json.JSONArray;
-import org.json.JSONException;
+import java.util.Set;
 import org.json.JSONObject;
-import java.util.Timer;
-import java.util.TimerTask;
+
+import java.util.*;
 
 
 import javax.swing.*;
 import java.net.URISyntaxException;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.Timer;
 
 public class PartySocketIOClient
 {
@@ -35,11 +34,20 @@ public class PartySocketIOClient
             });
 
             // Event: Party Update
-            socket.on("party_update", new Emitter.Listener() {
-                @Override
-                public void call(Object... args) {
-                    System.out.println("Party Update Received: " + args[0]);
-                    processPartyUpdate(args[0]);
+            socket.on("party_update", args -> {
+                try {
+                    // Parse received party data
+                    JSONObject partyData = new JSONObject(args[0].toString());
+                    System.out.println("Party Update Received: " + partyData);
+
+                    // Process the received update
+                    processPartyUpdate(partyData);
+
+                    // Send acknowledgment back to the server
+                    socket.emit("ack_party_update", "Party update processed successfully");
+                } catch (Exception e) {
+                    e.printStackTrace();
+                    System.err.println("Failed to process party update: " + e.getMessage());
                 }
             });
 
@@ -51,7 +59,6 @@ public class PartySocketIOClient
             socket.on("connect_timeout", args -> {
                 System.err.println("Socket.IO Connection Timeout.");
             });
-
 
             // Event: Disconnect
             socket.on(Socket.EVENT_DISCONNECT, args -> {
@@ -67,6 +74,7 @@ public class PartySocketIOClient
         }
     }
 
+
     public PartySocketIOClient(OsrsSplitPlugin plugin)
     {
         this.plugin = plugin;
@@ -74,6 +82,11 @@ public class PartySocketIOClient
 
 
     public void sendCreateParty(String passphrase, String rsn, int world) {
+        if (rsn == null || rsn.isEmpty()) {
+            System.err.println("Invalid RSN: " + rsn);
+            return;
+        }
+
         JSONObject payload = new JSONObject();
         payload.put("passphrase", passphrase);
         payload.put("rsn", rsn);
@@ -82,6 +95,7 @@ public class PartySocketIOClient
         socket.emit("create-party", payload);
         System.out.println("Sent create-party event with payload: " + payload);
     }
+
 
 
 
@@ -107,44 +121,102 @@ public class PartySocketIOClient
     }
 
     private void processPartyUpdate(Object data) {
-        try {
-            JSONObject json = new JSONObject(data.toString());
+        SwingUtilities.invokeLater(() -> {
+            try {
+                JSONObject json = new JSONObject(data.toString());
+                String passphrase = json.getString("passphrase");
 
-            String passphrase = json.getString("passphrase");
-            if (!passphrase.equals(plugin.getPartyManager().getCurrentPartyPassphrase())) {
-                System.out.println("Ignoring update for mismatched passphrase.");
-                return;
-            }
+                // Ensure the update is only processed for the current party
+                if (!passphrase.equals(plugin.getPartyManager().getCurrentPartyPassphrase())) {
+                    System.out.println("Ignoring update for mismatched passphrase: " + passphrase);
+                    return;
+                }
 
-            JSONArray membersArray = json.optJSONArray("members");
-            if (membersArray == null) {
-                System.err.println("No members array in the party update payload.");
-                return;
-            }
+                String leader = json.optString("leader", null);
+                JSONArray membersArray = json.getJSONArray("members");
 
-            String leader = json.optString("leader", null);
+                Map<String, PlayerInfo> updatedMembers = new HashMap<>();
+                for (int i = 0; i < membersArray.length(); i++) {
+                    JSONObject memberJson = membersArray.getJSONObject(i);
+                    PlayerInfo playerInfo = new PlayerInfo(
+                            memberJson.getString("name"),
+                            memberJson.optInt("world", -1),
+                            memberJson.optInt("rank", -1),
+                            memberJson.optBoolean("verified", false),
+                            memberJson.optBoolean("confirmedSplit", false)
+                    );
+                    updatedMembers.put(playerInfo.getName(), playerInfo);
+                }
 
-            Map<String, PlayerInfo> updatedMembers = new HashMap<>();
-            for (int i = 0; i < membersArray.length(); i++) {
-                JSONObject memberJson = membersArray.getJSONObject(i);
-                PlayerInfo playerInfo = new PlayerInfo(
-                        memberJson.getString("name"),
-                        memberJson.optInt("world", -1),
-                        memberJson.optInt("rank", -1),
-                        memberJson.optBoolean("verified", false),
-                        memberJson.optBoolean("confirmedSplit", false)
-                );
-                updatedMembers.put(playerInfo.getName(), playerInfo);
-            }
-
-            SwingUtilities.invokeLater(() -> {
                 plugin.getPartyManager().updateCurrentParty(passphrase, updatedMembers);
-                plugin.getPartyManager().setLeader(leader); // Update leader
+                plugin.getPartyManager().setLeader(leader);
                 plugin.getPanel().updatePartyMembers();
-            });
-        } catch (JSONException e) {
-            System.err.println("Error processing party update: " + e.getMessage());
+            } catch (Exception e) {
+                e.printStackTrace();
+                System.err.println("Failed to process party update: " + e.getMessage());
+            }
+        });
+    }
+
+
+
+
+
+
+
+
+
+
+
+
+    public void fetchBatchVerification(Set<String> rsns, String apiKey) {
+        if (apiKey == null || apiKey.isEmpty()) {
+            System.out.println("API key is missing. Cannot verify RSNs.");
+            return;
+        }
+
+        JSONObject payload = new JSONObject();
+        payload.put("apiKey", apiKey);
+        payload.put("rsns", new JSONArray(rsns));
+
+        try {
+            String response = HttpUtil.postRequest("http://127.0.0.1:5000/verify-batch", payload.toString());
+            JSONObject jsonResponse = new JSONObject(response);
+
+            if (jsonResponse.optBoolean("verified", false)) {
+                JSONArray rsnData = jsonResponse.optJSONArray("rsnData");
+                if (rsnData != null) {
+                    for (int i = 0; i < rsnData.length(); i++) {
+                        JSONObject rsnObject = rsnData.optJSONObject(i);
+                        if (rsnObject != null && rsnObject.has("name")) {
+                            String name = rsnObject.optString("name", null);
+                            int rank = rsnObject.optInt("rank", -1);
+                            boolean verified = rsnObject.optBoolean("verified", false);
+
+                            if (name != null) {
+                                PlayerInfo playerInfo = new PlayerInfo(name, -1, rank, verified, false);
+                                plugin.getPartyManager().addMember(playerInfo);
+                            } else {
+                                System.err.println("Invalid RSN data: missing or null name.");
+                            }
+                        } else {
+                            System.err.println("Invalid RSN object: " + rsnObject);
+                        }
+                    }
+
+                    // Update UI
+                    plugin.getPanel().updatePartyMembers();
+                } else {
+                    System.err.println("No rsnData array in batch verification response.");
+                }
+            } else {
+                System.err.println("Batch verification failed or unverified.");
+            }
+            // Immediately update UI
+                plugin.getPanel().updatePartyMembers();
+        } catch (Exception e) {
             e.printStackTrace();
+            System.err.println("Failed to fetch batch verification: " + e.getMessage());
         }
     }
 
