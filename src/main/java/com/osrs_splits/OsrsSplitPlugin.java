@@ -140,26 +140,39 @@ public class OsrsSplitPlugin extends Plugin {
 	}
 
 	@Subscribe
-	public void onGameStateChanged(GameStateChanged event) {
-		if (event.getGameState() == GameState.LOGGED_IN) {
-			String playerName = client.getLocalPlayer().getName();
+	public void onGameStateChanged(GameStateChanged event)
+	{
+		if (event.getGameState() == GameState.LOGGED_IN)
+		{
+			String playerName = client.getLocalPlayer() != null ? client.getLocalPlayer().getName() : null;
 			String apiKey = config.apiKey();
 
-			SwingWorker<Void, Void> worker = new SwingWorker<>() {
+			SwingWorker<Void, Void> worker = new SwingWorker<>()
+			{
 				@Override
-				protected Void doInBackground() {
-					socketIoClient.fetchBatchVerification(Collections.singleton(playerName), apiKey);
+				protected Void doInBackground()
+				{
+					if (playerName != null && !playerName.isEmpty())
+					{
+						socketIoClient.fetchBatchVerification(Collections.singleton(playerName), apiKey);
+					}
+					else
+					{
+						System.out.println("Warning: Player name is null or empty, skipping fetchBatchVerification.");
+					}
 					return null;
 				}
 
 				@Override
-				protected void done() {
+				protected void done()
+				{
 					System.out.println("Player verification cached for " + playerName);
 				}
 			};
 			worker.execute();
 		}
 	}
+
 
 
 	@Subscribe
@@ -174,31 +187,35 @@ public class OsrsSplitPlugin extends Plugin {
 
 
 	@Subscribe
-	public void onWorldChanged(WorldChanged event) {
-		long currentTime = System.currentTimeMillis();
-		if (currentTime - lastWorldChange < 3000) { // Throttle updates to every 3 seconds
+	public void onWorldChanged(WorldChanged event)
+	{
+		int newWorld = client.getWorld();
+		if (newWorld < 1)
+		{
+			// If it's 0 or -1, we skip updating because it's a transient loading value
+			System.out.println("Skipping world update because newWorld = " + newWorld);
 			return;
 		}
-		lastWorldChange = currentTime;
 
-		SwingWorker<Void, Void> worker = new SwingWorker<>() {
+		SwingWorker<Void, Void> worker = new SwingWorker<>()
+		{
 			@Override
-			protected Void doInBackground() {
+			protected Void doInBackground()
+			{
 				String playerName = client.getLocalPlayer().getName();
-				int newWorld = client.getWorld();
-
-				// Update player data
 				partyManager.updatePlayerData(playerName, newWorld);
 				return null;
 			}
 
 			@Override
-			protected void done() {
-				panel.updatePartyMembers(); // Refresh UI
+			protected void done()
+			{
+				panel.updatePartyMembers();
 			}
 		};
 		worker.execute();
 	}
+
 
 
 

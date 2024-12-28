@@ -4,6 +4,7 @@ import com.Utils.HttpUtil;
 import com.Utils.PlayerVerificationStatus;
 import com.osrs_splits.PartyManager.PartyManager;
 import com.osrs_splits.PartyManager.PlayerInfo;
+import lombok.Getter;
 import net.runelite.api.ChatMessageType;
 import net.runelite.api.Item;
 import net.runelite.api.NPC;
@@ -36,10 +37,14 @@ import java.util.Objects;
 
 public class OsrsSplitPluginPanel extends PluginPanel
 {
+    @Getter
     private final JButton createPartyButton = new JButton("Create Party");
+    @Getter
     private final JButton joinPartyButton = new JButton("Join Party");
     private final JButton leavePartyButton = new JButton("Leave Party");
+    @Getter
     private final JLabel passphraseLabel = new JLabel("Passphrase: N/A");
+
     private final JPanel memberListPanel = new JPanel();
     private final JButton screenshotButton = new JButton("Screenshot and Upload");
     private final JTextField apiKeyField = new JPasswordField(20);
@@ -111,52 +116,77 @@ public class OsrsSplitPluginPanel extends PluginPanel
 
     }
 
-    private void createParty() {
-        if (plugin.getClient().getLocalPlayer() == null) {
+    private void createParty()
+    {
+        if (plugin.getClient().getLocalPlayer() == null)
+        {
             showLoginWarning();
             return;
         }
 
         String playerName = plugin.getClient().getLocalPlayer().getName();
-        int world = plugin.getClient().getWorld(); // Get the player's world
+        int world = plugin.getClient().getWorld();
 
-        if (plugin.getPartyManager().isInParty(playerName)) {
+        if (plugin.getPartyManager().isInParty(playerName))
+        {
             JOptionPane.showMessageDialog(this, "You are already in a party.", "Error", JOptionPane.ERROR_MESSAGE);
             return;
         }
 
         String passphrase = JOptionPane.showInputDialog(this, "Enter a passphrase for your party:");
-        if (passphrase == null || passphrase.trim().isEmpty()) {
+        if (passphrase == null || passphrase.trim().isEmpty())
+        {
             JOptionPane.showMessageDialog(this, "Passphrase cannot be empty.", "Error", JOptionPane.ERROR_MESSAGE);
             return;
         }
 
-        SwingWorker<Void, Void> worker = new SwingWorker<>() {
+        SwingWorker<Void, Void> worker = new SwingWorker<>()
+        {
             @Override
-            protected Void doInBackground() {
-                try {
-                    // Send the create-party event with the world
-                    plugin.getWebSocketClient().sendCreateParty(passphrase, playerName, world);
-                    plugin.getPartyManager().createParty(playerName, passphrase);
-
-                    // Set current party details
-                    plugin.getPartyManager().setCurrentPartyPassphrase(passphrase);
-                    Map<String, PlayerInfo> updatedMembers = Map.of(
-                            playerName, new PlayerInfo(playerName, world, 0, false, false)
+            protected Void doInBackground()
+            {
+                try
+                {
+                    // Send create-party to the server
+                    plugin.getWebSocketClient().sendCreateParty(
+                            passphrase,
+                            playerName,
+                            world,
+                            plugin.getConfig().apiKey()
                     );
-                    plugin.getPartyManager().setMembers(updatedMembers);
-                } catch (Exception e) {
-                    JOptionPane.showMessageDialog(OsrsSplitPluginPanel.this, "Failed to create party: " + e.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+
+                    // Locally record that we attempted to create a party
+                    plugin.getPartyManager().createParty(playerName, passphrase);
+                    plugin.getPartyManager().setCurrentPartyPassphrase(passphrase);
+
+                    // IMPORTANT: We no longer force a local member with rank=0 here.
+                    // We'll wait for the server's broadcast to tell us the correct rank.
+                    // If you want to set an empty local map, you can do:
+                    // plugin.getPartyManager().clearMembers();
+                    // But typically we wait for party_update from the server.
+                }
+                catch (Exception e)
+                {
+                    JOptionPane.showMessageDialog(
+                            OsrsSplitPluginPanel.this,
+                            "Failed to create party: " + e.getMessage(),
+                            "Error",
+                            JOptionPane.ERROR_MESSAGE
+                    );
                 }
                 return null;
             }
 
             @Override
-            protected void done() {
+            protected void done()
+            {
+                // Show passphrase label
                 updatePassphraseLabel(passphrase);
+                passphraseLabel.setVisible(true);
+
                 enableLeaveParty();
                 screenshotButton.setVisible(true);
-                updatePartyMembers();
+                updatePartyMembers(); // Might initially show no members until the server broadcast arrives
             }
         };
 
@@ -170,50 +200,62 @@ public class OsrsSplitPluginPanel extends PluginPanel
 
 
 
-    private void joinParty() {
-        if (plugin.getClient().getLocalPlayer() == null) {
+
+
+
+    private void joinParty()
+    {
+        if (plugin.getClient().getLocalPlayer() == null)
+        {
             showLoginWarning();
             return;
         }
 
         String passphrase = JOptionPane.showInputDialog(this, "Enter the passphrase of the party to join:");
-        if (passphrase == null || passphrase.trim().isEmpty()) {
+        if (passphrase == null || passphrase.trim().isEmpty())
+        {
             JOptionPane.showMessageDialog(this, "Passphrase cannot be empty.", "Error", JOptionPane.ERROR_MESSAGE);
             return;
         }
 
         String playerName = plugin.getClient().getLocalPlayer().getName();
 
-        SwingWorker<Void, Void> worker = new SwingWorker<>() {
+        SwingWorker<Void, Void> worker = new SwingWorker<>()
+        {
             @Override
-            protected Void doInBackground() {
-                try {
-                    // Use the new Socket.IO method to join a party
+            protected Void doInBackground()
+            {
+                try
+                {
+                    // Ask the server to join
                     plugin.getWebSocketClient().sendJoinParty(
                             passphrase,
                             playerName,
-                            plugin.getClient().getWorld(), // Current world
-                            plugin.getConfig().apiKey()   // API key for verification
+                            plugin.getClient().getWorld(),
+                            plugin.getConfig().apiKey()
                     );
 
-                    // Retrieve the party details from the server or WebSocket
-                    Map<String, PlayerInfo> updatedMembers = plugin.getPartyManager().getMembers(); // Or use server data
+                    // Tentatively set the passphrase in local manager
                     plugin.getPartyManager().setCurrentPartyPassphrase(passphrase);
-                    plugin.getPartyManager().setMembers(updatedMembers);
-                } catch (Exception e) {
-                    JOptionPane.showMessageDialog(OsrsSplitPluginPanel.this, "Failed to join party: " + e.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+
+                }
+                catch (Exception e)
+                {
+                    JOptionPane.showMessageDialog(
+                            OsrsSplitPluginPanel.this,
+                            "Failed to join party: " + e.getMessage(),
+                            "Error",
+                            JOptionPane.ERROR_MESSAGE
+                    );
                 }
                 return null;
             }
 
             @Override
-            protected void done() {
-                updatePassphraseLabel(passphrase);
-                enableLeaveParty();
-                screenshotButton.setVisible(true);
-                updatePartyMembers();
-
-                JOptionPane.showMessageDialog(OsrsSplitPluginPanel.this, "Joined the party successfully!", "Success", JOptionPane.INFORMATION_MESSAGE);
+            protected void done()
+            {
+                // Do NOT display success here. We wait for the server's "response" event
+                // If the server says "joinPartyError," we'll show an error instead.
             }
         };
 
@@ -226,57 +268,69 @@ public class OsrsSplitPluginPanel extends PluginPanel
 
 
 
-
-    private void leaveParty() {
-        if (plugin.getClient().getLocalPlayer() == null) {
+    private void leaveParty()
+    {
+        if (plugin.getClient().getLocalPlayer() == null)
+        {
             showLoginWarning();
             return;
         }
 
+        // Grab the local player's name
         String playerName = plugin.getClient().getLocalPlayer().getName();
+
+        // Extract the current passphrase from the label text
         String passphrase = passphraseLabel.getText().replace("Passphrase: ", "").trim();
 
-        if (passphrase.isEmpty()) {
+        if (passphrase.isEmpty())
+        {
             JOptionPane.showMessageDialog(this, "No active party to leave.", "Error", JOptionPane.ERROR_MESSAGE);
             return;
         }
 
-        SwingWorker<Void, Void> worker = new SwingWorker<>() {
+        // Use SwingWorker so we don't block the UI
+        SwingWorker<Void, Void> worker = new SwingWorker<>()
+        {
             @Override
-            protected Void doInBackground() {
-                try {
-                    plugin.getWebSocketClient().sendLeaveParty(passphrase, playerName); // Emit leave-party event
-                } catch (Exception e) {
-                    JOptionPane.showMessageDialog(OsrsSplitPluginPanel.this, "Failed to leave party: " + e.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+            protected Void doInBackground()
+            {
+                try
+                {
+                    // Notify the server that this player is leaving the party
+                    plugin.getWebSocketClient().sendLeaveParty(passphrase, playerName);
+                }
+                catch (Exception e)
+                {
+                    JOptionPane.showMessageDialog(
+                            OsrsSplitPluginPanel.this,
+                            "Failed to leave party: " + e.getMessage(),
+                            "Error",
+                            JOptionPane.ERROR_MESSAGE
+                    );
                 }
                 return null;
             }
 
             @Override
-            protected void done() {
-                // Clear party data
-                plugin.getPartyManager().clearMembers();
-                plugin.getPartyManager().setCurrentPartyPassphrase(null);
-                plugin.getPartyManager().setLeader(null);
+            protected void done()
+            {
+                // Instead of locally clearing the party data,
+                // we wait for the server's "party_update" or "party_disband" broadcast.
 
-                // Update UI
-                leavePartyButton.setVisible(false);
+                // Hide UI elements for now
                 passphraseLabel.setVisible(false);
+                leavePartyButton.setVisible(false);
                 screenshotButton.setVisible(false);
-                memberListPanel.removeAll();
-                memberListPanel.revalidate();
-                memberListPanel.repaint();
 
-                // Re-enable create and join party buttons
+                // Re-enable the create & join buttons
                 createPartyButton.setEnabled(true);
                 joinPartyButton.setEnabled(true);
-
-                JOptionPane.showMessageDialog(OsrsSplitPluginPanel.this, "You have left the party.", "Party Left", JOptionPane.INFORMATION_MESSAGE);
             }
         };
 
         worker.execute();
     }
+
 
 
 
@@ -319,7 +373,7 @@ public class OsrsSplitPluginPanel extends PluginPanel
         gbc.weightx = 1.0;
         JLabel nameLabel = new JLabel(playerName + (isLeader ? " (Leader)" : ""));
         nameLabel.setFont(nameLabel.getFont().deriveFont(Font.BOLD));
-        nameLabel.setForeground(isLeader ? Color.BLUE : Color.GRAY);
+        nameLabel.setForeground(isLeader ? Color.ORANGE : Color.GRAY);
 
         // Add rank icon next to the player's name
         if (rank >= 0) {
@@ -374,18 +428,53 @@ public class OsrsSplitPluginPanel extends PluginPanel
 
 
 
-    public void updatePartyMembers() {
-        SwingUtilities.invokeLater(() -> {
+    public void updatePartyMembers()
+    {
+        SwingUtilities.invokeLater(() ->
+        {
             memberListPanel.removeAll();
 
             String currentPassphrase = plugin.getPartyManager().getCurrentPartyPassphrase();
-            if (currentPassphrase == null || plugin.getPartyManager().getMembers().isEmpty()) {
+            Map<String, PlayerInfo> members = plugin.getPartyManager().getMembers();
+
+            // If not in a party (no passphrase or empty membership), hide screenshot button entirely
+            if (currentPassphrase == null || members.isEmpty())
+            {
                 JLabel noPartyLabel = new JLabel("No active party.");
                 noPartyLabel.setHorizontalAlignment(SwingConstants.CENTER);
                 memberListPanel.add(noPartyLabel);
-            } else {
-                Map<String, PlayerInfo> members = plugin.getPartyManager().getMembers();
-                for (PlayerInfo player : members.values()) {
+
+                screenshotButton.setVisible(false);
+                screenshotButton.setEnabled(false);
+                screenshotButton.setToolTipText("Not in a party.");
+            }
+            else
+            {
+                // We are in a party => show the screenshot button for all members
+                screenshotButton.setVisible(true);
+
+                // Determine who is local player and whether they are leader
+                String localPlayer = (plugin.getClient().getLocalPlayer() != null)
+                        ? plugin.getClient().getLocalPlayer().getName()
+                        : null;
+                String partyLeader = plugin.getPartyManager().getLeader();
+                boolean isLeader = localPlayer != null && partyLeader != null && partyLeader.equalsIgnoreCase(localPlayer);
+
+                // Enable or disable the button based on leadership
+                if (isLeader)
+                {
+                    screenshotButton.setEnabled(true);
+                    screenshotButton.setToolTipText("All players must be in the same world and confirmed split before screenshotting.");
+                }
+                else
+                {
+                    screenshotButton.setEnabled(false);
+                    screenshotButton.setToolTipText("Screenshots can only be sent by the party leader (Blue).");
+                }
+
+                // Build the member cards
+                for (PlayerInfo player : members.values())
+                {
                     JPanel playerCard = createPlayerCard(
                             player.getName(),
                             player.getWorld(),
@@ -395,6 +484,9 @@ public class OsrsSplitPluginPanel extends PluginPanel
                             player.getRank()
                     );
                     memberListPanel.add(playerCard);
+
+                    // small vertical gap
+                    memberListPanel.add(Box.createVerticalStrut(5));
                 }
             }
 
@@ -402,6 +494,9 @@ public class OsrsSplitPluginPanel extends PluginPanel
             memberListPanel.repaint();
         });
     }
+
+
+
 
 
 
@@ -455,7 +550,9 @@ public class OsrsSplitPluginPanel extends PluginPanel
     public void updatePassphraseLabel(String passphrase)
     {
         passphraseLabel.setText("Passphrase: " + passphrase);
+        passphraseLabel.setVisible(true);
     }
+
 
 
     private void sendChatMessages(Runnable afterMessagesSent)
@@ -721,9 +818,6 @@ private void screenshotAndUpload()
         // Check if the item ID matches any of our special items
         return Arrays.stream(SPECIAL_ITEM_IDS).anyMatch(id -> id == itemId);
     }
-
-
-
 
 
 }
