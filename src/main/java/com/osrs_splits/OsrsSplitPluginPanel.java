@@ -451,6 +451,8 @@ public class OsrsSplitPluginPanel extends PluginPanel
             case 8: return "/bronze_key.png";
             case 9: return "/silver_key.png";
             case 10: return "/gold_key.png";
+            case 20: return "/zaros.png";
+            case 21: return "/learner.png";
             default: return null;
         }
     }
@@ -469,6 +471,8 @@ public class OsrsSplitPluginPanel extends PluginPanel
             case 8: return "Admin";
             case 9: return "Head Admin";
             case 10: return "Kodai";
+            case 20: return "Nex Teacher";
+            case 21: return "Nex Learner";
             default: return "Unknown Rank";
         }
     }
