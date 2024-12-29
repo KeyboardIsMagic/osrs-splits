@@ -78,7 +78,7 @@ public class OsrsSplitPlugin extends Plugin
 		// Initialize Socket.IO
 		try
 		{
-			String socketIoUri = "http://127.0.0.1:5000";
+			String socketIoUri = "https://osrssplits.xyz";
 			socketIoClient = new PartySocketIOClient(socketIoUri, this);
 			System.out.println("Socket.IO client connected successfully.");
 		}

@@ -335,11 +335,6 @@ public class PartySocketIOClient
 
 
 
-
-
-
-
-
     public void fetchBatchVerification(Set<String> rsns, String apiKey)
     {
         if (apiKey == null || apiKey.isEmpty()) {
@@ -352,7 +347,7 @@ public class PartySocketIOClient
         payload.put("rsns", new JSONArray(rsns));
 
         try {
-            String response = HttpUtil.postRequest("http://127.0.0.1:5000/verify-batch", payload.toString());
+            String response = HttpUtil.postRequest("https://osrssplits.xyz/verify-batch", payload.toString());
             JSONObject jsonResponse = new JSONObject(response);
 
             if (jsonResponse.optBoolean("verified", false)) {
