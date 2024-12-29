@@ -1,5 +1,6 @@
 package com.osrs_splits;
 
+import com.Utils.HttpUtil;
 import com.osrs_splits.PartyManager.PlayerInfo;
 import lombok.Getter;
 import lombok.Setter;
@@ -26,6 +27,7 @@ import java.nio.file.Paths;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Map;
 import java.util.Objects;
@@ -55,7 +57,7 @@ public class OsrsSplitPluginPanel extends PluginPanel
 
     private final OsrsSplitPlugin plugin;
     private static final int TARGET_NPC_ID = 3031; // goblin
-    private static final int[] SPECIAL_ITEM_IDS = {526}; // Bones item ID for testing
+    private static final int[] SPECIAL_ITEM_IDS = {526, 26370, 26372, 26374, 26376, 26378, 26380}; // Added Unique Items (REMOVE BONES)****
 
     public OsrsSplitPluginPanel(OsrsSplitPlugin plugin)
     {
@@ -649,6 +651,22 @@ public class OsrsSplitPluginPanel extends PluginPanel
         // No-op in example
     }
 
+
+    // Get name for unique item (Could do this on API Side)
+    private String getUniqueItem(int uniqueItem) {
+        switch (uniqueItem) {
+            case 526: return "Bones";
+            case 26370: return "Ancient hilt";
+            case 26372: return "Nihil Horn";
+            case 26374: return "Zaryte vambraces";
+            case 26376: return "Torva full helm (damaged)";
+            case 26378: return "Torva platebody (damaged)";
+            case 26380: return "Torva platelegs (damaged)";
+
+            default: return null;
+        }
+    }
+
     @Subscribe
     public void onNpcLootReceived(NpcLootReceived event)
     {
@@ -672,10 +690,20 @@ public class OsrsSplitPluginPanel extends PluginPanel
                     new Thread(() -> {
                         try
                         {
+
                             Thread.sleep(1000);
+
                             BufferedImage screenshot = captureScreenshot();
                             File screenshotFile = saveScreenshot(screenshot);
-                            uploadToDiscord(screenshotFile);
+
+                            java.util.List<String> partyList = new ArrayList<>(plugin.getPartyManager().getMembers().keySet());
+
+                            // Get leader of party
+                            String leader = plugin.getPartyManager().getLeader();
+
+                            // API POST Call to post to discord
+                            HttpUtil.sendUniqueDiscord("http://127.0.0.1:8000/on-drop/", partyList, leader, getUniqueItem(itemStack.getId()), screenshotFile);
+
                             SwingUtilities.invokeLater(() ->
                                     showScreenshotNotification("Screenshot taken and uploaded to Discord!")
                             );
