@@ -1,6 +1,7 @@
 package com.Utils;
 
 import com.osrs_splits.OsrsSplitPlugin;
+import com.osrs_splits.OsrsSplitPluginPanel;
 import com.osrs_splits.PartyManager.PlayerInfo;
 import io.socket.client.IO;
 import io.socket.client.Socket;
@@ -20,6 +21,7 @@ public class PartySocketIOClient
 {
     private final OsrsSplitPlugin plugin;
     private Socket socket;
+    private String lastAction = null;
 
     public PartySocketIOClient(String serverUrl, OsrsSplitPlugin plugin)
     {
@@ -29,32 +31,26 @@ public class PartySocketIOClient
         {
             socket = IO.socket(serverUrl);
 
-            // Connected
             socket.on(Socket.EVENT_CONNECT, args -> {
                 System.out.println("Socket.IO Connected to the server.");
             });
 
-            // Event: Party Update
+            // Listen for party_update
             socket.on("party_update", args -> {
                 try
                 {
                     JSONObject partyData = new JSONObject(args[0].toString());
                     System.out.println("Party Update Received: " + partyData);
-
-                    // Process the received update
                     processPartyUpdate(partyData);
-
-                    // Ack
                     socket.emit("ack_party_update", "Party update processed successfully");
                 }
                 catch (Exception e)
                 {
                     e.printStackTrace();
-                    System.err.println("Failed to process party update: " + e.getMessage());
                 }
             });
 
-            // Event: joinPartyError
+            // Listen for joinPartyError
             socket.on("joinPartyError", args -> {
                 SwingUtilities.invokeLater(() -> {
                     try
@@ -63,83 +59,96 @@ public class PartySocketIOClient
                         String msg = obj.optString("message", "Party join error");
                         System.out.println("Received 'joinPartyError': " + obj);
 
-                        // Show an error only to the user who tried to join
-                        JOptionPane.showMessageDialog(
-                                null,
-                                msg,
-                                "Join Party Failed",
-                                JOptionPane.ERROR_MESSAGE
-                        );
-
-                        // Clear passphrase so we don't show a blank panel
                         plugin.getPartyManager().setCurrentPartyPassphrase(null);
 
-                        // Re-enable create/join
                         plugin.getPanel().getCreatePartyButton().setEnabled(true);
                         plugin.getPanel().getJoinPartyButton().setEnabled(true);
+
+                        plugin.getPanel().getStatusLabel().setText("Error: " + msg);
+                        plugin.getPanel().getStatusLabel().setVisible(true);
                     }
-                    catch (Exception e)
+                    catch (Exception ex)
                     {
-                        e.printStackTrace();
+                        ex.printStackTrace();
                     }
                 });
             });
 
-            // "response" listener
+            // Listen for "response" from server
             socket.on("response", args -> {
                 SwingUtilities.invokeLater(() -> {
-                    try
-                    {
+                    try {
                         JSONObject obj = new JSONObject(args[0].toString());
                         String status = obj.optString("status", "");
                         String message = obj.optString("message", "");
                         System.out.println("Received 'response': " + obj);
 
-                        if ("success".equalsIgnoreCase(status))
-                        {
-                            // Show no pop-ups for success (party created, user joined, etc.)
-                            // Just update the UI to hide create/join and show leave
-                            plugin.getPanel().enableLeaveParty();
-                            plugin.getPanel().updatePartyMembers();
+                        OsrsSplitPluginPanel panel = plugin.getPanel();
+
+                        if ("success".equalsIgnoreCase(status)) {
+                            // if user just created or joined
+                            if ("create-party".equalsIgnoreCase(lastAction) || "join-party".equalsIgnoreCase(lastAction)) {
+                                String passphrase = panel.getLastProposedPassphrase();
+                                String localPlayer = (plugin.getClient().getLocalPlayer() != null)
+                                        ? plugin.getClient().getLocalPlayer().getName()
+                                        : null;
+
+                                // set passphrase in the local manager so that we accept the next update :)
+                                plugin.getPartyManager().setCurrentPartyPassphrase(passphrase);
+                                // create local placeholder
+                                plugin.getPartyManager().createParty(localPlayer, passphrase);
+                                System.out.println("Party created locally with leader=" + localPlayer + " passphrase=" + passphrase);
+
+                                // *** Force server to broadcast final party data
+                                JSONObject fetchPayload = new JSONObject();
+                                fetchPayload.put("passphrase", passphrase);
+                                fetchPayload.put("apiKey", plugin.getConfig().apiKey());
+                                requestPartyUpdate(fetchPayload);
+                            }
+
+                            panel.getStatusLabel().setText("");
+                            panel.getStatusLabel().setVisible(false);
+                            panel.enableLeaveParty();
+                            panel.updatePartyMembers();
                         }
-                        else
-                        {
-                            // If it's not "success", we do show an error
-                            JOptionPane.showMessageDialog(
-                                    null,
-                                    "Unexpected server response: " + message,
-                                    "Join/Create Party Error",
-                                    JOptionPane.ERROR_MESSAGE
-                            );
+                        else {
+                            // revert logic
+                            plugin.getPartyManager().setCurrentPartyPassphrase(null);
+                            plugin.getPartyManager().clearMembers();
+
+                            panel.getStatusLabel().setText("Error: " + message);
+                            panel.getStatusLabel().setVisible(true);
+
+                            panel.getCreatePartyButton().setEnabled(true);
+                            panel.getJoinPartyButton().setEnabled(true);
+                            panel.getLeavePartyButton().setVisible(false);
+                            panel.getScreenshotButton().setVisible(false);
+
+                            System.out.println("Create/Join party error -> revert local. Reason: " + message);
                         }
+
+                        lastAction = null;
                     }
-                    catch (Exception e)
-                    {
+                    catch (Exception e) {
                         e.printStackTrace();
                     }
                 });
             });
 
-            // Connect/Timeout/Disconnect logs
-            socket.on("connect_error", args -> {
-                System.err.println("Socket.IO Connection Error: " + args[0]);
-            });
-            socket.on("connect_timeout", args -> {
-                System.err.println("Socket.IO Connection Timeout.");
-            });
-            socket.on(Socket.EVENT_DISCONNECT, args -> {
-                System.out.println("Socket.IO Disconnected.");
-            });
+
+
+            // Connect logs
+            socket.on("connect_error", args -> System.err.println("Socket.IO Connection Error: " + args[0]));
+            socket.on("connect_timeout", args -> System.err.println("Socket.IO Connection Timeout."));
+            socket.on(Socket.EVENT_DISCONNECT, args -> System.out.println("Socket.IO Disconnected."));
 
             socket.connect();
         }
         catch (URISyntaxException e)
         {
-            System.err.println("Invalid server URL: " + e.getMessage());
             e.printStackTrace();
         }
     }
-
 
 
 
@@ -148,42 +157,55 @@ public class PartySocketIOClient
         this.plugin = plugin;
     }
 
+    public void requestPartyUpdate(JSONObject payload) {
+        System.out.println("Sending request_party_update with payload: " + payload);
+        socket.emit("request_party_update", payload);
+    }
 
     public void sendCreateParty(String passphrase, String rsn, int world, String apiKey)
     {
-        if (rsn == null || rsn.isEmpty())
-        {
-            System.err.println("Invalid RSN: " + rsn);
-            return;
-        }
+        // Mark the action
+        lastAction = "create-party";
 
         JSONObject payload = new JSONObject();
         payload.put("passphrase", passphrase);
         payload.put("rsn", rsn);
         payload.put("world", world);
-        payload.put("apiKey", apiKey); // Make sure we do pass it
+        payload.put("apiKey", apiKey);
 
-        // Extra debug
+        plugin.getPanel().setLastProposedPassphrase(passphrase);
+
         System.out.println("Creating party with payload: " + payload);
-
         socket.emit("create-party", payload);
-        System.out.println("Sent create-party event with payload: " + payload);
     }
 
 
+    public void sendJoinParty(String passphrase, String rsn, int world, String apiKey)
+    {
+        lastAction = "join-party";
 
-
-
-
-    public void sendJoinParty(String passphrase, String rsn, int world, String apiKey) {
         JSONObject payload = new JSONObject();
         payload.put("passphrase", passphrase);
         payload.put("rsn", rsn);
         payload.put("world", world);
-        payload.put("apiKey", apiKey); // Include the API key for server verification
+        payload.put("apiKey", apiKey);
 
+        plugin.getPanel().setLastProposedPassphrase(passphrase);
+
+        System.out.println("Sending join-party with payload: " + payload);
         socket.emit("join-party", payload);
-        System.out.println("Sent join-party event with payload: " + payload);
+    }
+
+    public void sendLeaveParty(String passphrase, String rsn)
+    {
+        lastAction = "leave-party";
+
+        JSONObject payload = new JSONObject();
+        payload.put("passphrase", passphrase);
+        payload.put("rsn", rsn);
+
+        System.out.println("Sending leave-party event: " + payload.toString());
+        socket.emit("leave-party", payload);
     }
 
 
@@ -196,63 +218,60 @@ public class PartySocketIOClient
         }
     }
 
-    private void processPartyUpdate(Object data)
+    private void processPartyUpdate(JSONObject json)
     {
-        SwingUtilities.invokeLater(() ->
-        {
+        SwingUtilities.invokeLater(() -> {
             try
             {
-                JSONObject json = new JSONObject(data.toString());
                 String action = json.optString("action", "");
                 String passphrase = json.optString("passphrase", "");
                 String leader = json.optString("leader", null);
                 JSONArray membersArray = json.optJSONArray("members");
 
-                if (!passphrase.equals(plugin.getPartyManager().getCurrentPartyPassphrase()))
+                String localPassphrase = plugin.getPartyManager().getCurrentPartyPassphrase();
+                if (!passphrase.equals(localPassphrase))
                 {
                     System.out.println("Ignoring update for mismatched passphrase: " + passphrase);
                     return;
                 }
 
-                // If server says "party_disband"
                 if ("party_disband".equals(action))
                 {
                     System.out.println("Received party_disband for " + passphrase);
-
                     plugin.getPartyManager().clearMembers();
                     plugin.getPartyManager().setCurrentPartyPassphrase(null);
                     plugin.getPartyManager().setLeader(null);
 
-                    // Re-enable create/join for local
                     plugin.getPanel().getCreatePartyButton().setEnabled(true);
                     plugin.getPanel().getJoinPartyButton().setEnabled(true);
+                    plugin.getPanel().getLeavePartyButton().setVisible(false);
+                    plugin.getPanel().getScreenshotButton().setVisible(false);
 
                     plugin.getPanel().updatePartyMembers();
                     plugin.getPanel().updatePassphraseLabel("");
                     plugin.getPanel().getPassphraseLabel().setVisible(false);
-
                     return;
                 }
 
-                // Build updated list
+                // Build updated members
                 Map<String, PlayerInfo> updatedMembers = new HashMap<>();
                 if (membersArray != null)
                 {
                     for (int i = 0; i < membersArray.length(); i++)
                     {
-                        JSONObject memberJson = membersArray.getJSONObject(i);
-                        PlayerInfo playerInfo = new PlayerInfo(
-                                memberJson.getString("name"),
-                                memberJson.optInt("world", -1),
-                                memberJson.optInt("rank", -1),
-                                memberJson.optBoolean("verified", false),
-                                memberJson.optBoolean("confirmedSplit", false)
+                        JSONObject mem = membersArray.getJSONObject(i);
+                        PlayerInfo pInfo = new PlayerInfo(
+                                mem.getString("name"),
+                                mem.optInt("world", -1),
+                                mem.optInt("rank", -1),
+                                mem.optBoolean("verified", false),
+                                mem.optBoolean("confirmedSplit", false)
                         );
-                        updatedMembers.put(playerInfo.getName(), playerInfo);
+                        updatedMembers.put(pInfo.getName(), pInfo);
                     }
                 }
 
-                // If no members remain -> clear local data, re-enable create/join
+                // If empty => disband
                 if (updatedMembers.isEmpty())
                 {
                     System.out.println("No members in party " + passphrase + ". Clearing local data.");
@@ -262,54 +281,57 @@ public class PartySocketIOClient
 
                     plugin.getPanel().getCreatePartyButton().setEnabled(true);
                     plugin.getPanel().getJoinPartyButton().setEnabled(true);
+                    plugin.getPanel().getLeavePartyButton().setVisible(false);
+                    plugin.getPanel().getScreenshotButton().setVisible(false);
 
                     plugin.getPanel().updatePartyMembers();
                     plugin.getPanel().updatePassphraseLabel("");
                     plugin.getPanel().getPassphraseLabel().setVisible(false);
-
                     return;
                 }
 
-                // If local player is not in updatedMembers, we parted ways
-                String localPlayerName = plugin.getClient().getLocalPlayer() != null
+                // If local user not in updated => parted ways
+                String localPlayer = plugin.getClient().getLocalPlayer() != null
                         ? plugin.getClient().getLocalPlayer().getName()
                         : null;
-
-                if (localPlayerName != null && !updatedMembers.containsKey(localPlayerName))
+                if (localPlayer != null && !updatedMembers.containsKey(localPlayer))
                 {
-                    System.out.println("Local player " + localPlayerName + " is not in updated list. Clearing local data...");
+                    System.out.println("Local player " + localPlayer + " is not in updated list. Clearing local data...");
                     plugin.getPartyManager().clearMembers();
                     plugin.getPartyManager().setCurrentPartyPassphrase(null);
                     plugin.getPartyManager().setLeader(null);
 
                     plugin.getPanel().getCreatePartyButton().setEnabled(true);
                     plugin.getPanel().getJoinPartyButton().setEnabled(true);
+                    plugin.getPanel().getLeavePartyButton().setVisible(false);
+                    plugin.getPanel().getScreenshotButton().setVisible(false);
 
                     plugin.getPanel().updatePartyMembers();
                     plugin.getPanel().updatePassphraseLabel("");
                     plugin.getPanel().getPassphraseLabel().setVisible(false);
-
                     return;
                 }
 
-                // Otherwise, local player is included, so update local data
+                // normal update
                 plugin.getPartyManager().updateCurrentParty(passphrase, updatedMembers);
                 plugin.getPartyManager().setLeader(leader);
 
-                // Keep passphrase label visible
+                System.out.println("Updated local party: " + passphrase
+                        + " with " + updatedMembers.size() + " members.");
+                System.out.println("Leader updated to: " + leader);
+
                 plugin.getPanel().updatePassphraseLabel(passphrase);
                 plugin.getPanel().getPassphraseLabel().setVisible(true);
 
-                // Refresh the UI
                 plugin.getPanel().updatePartyMembers();
             }
             catch (Exception e)
             {
                 e.printStackTrace();
-                System.err.println("Failed to process party update: " + e.getMessage());
             }
         });
     }
+
 
 
 
@@ -344,7 +366,7 @@ public class PartySocketIOClient
                             boolean verified = rsnObject.optBoolean("verified", false);
 
                             if (name != null) {
-                                // 1) See if we already have a record for that user:
+                                // check if we have a record for that user:
                                 PlayerInfo existing = plugin.getPartyManager().getMembers().get(name);
 
                                 if (existing != null) {
@@ -353,7 +375,7 @@ public class PartySocketIOClient
                                     existing.setVerified(verified);
                                 }
                                 else {
-                                    // 2) If it's the local user, we can store the real local world
+                                    // if the local user, store the real local world
                                     int realWorld = -1;
                                     if (plugin.getClient().getLocalPlayer() != null
                                             && name.equalsIgnoreCase(plugin.getClient().getLocalPlayer().getName()))
@@ -396,10 +418,8 @@ public class PartySocketIOClient
 
 
 
-
-
     public void emitClientState() {
-        Timer timer = new Timer(); // Create a Timer instance
+        Timer timer = new Timer();
         timer.scheduleAtFixedRate(new TimerTask() {
             @Override
             public void run() {
@@ -408,29 +428,16 @@ public class PartySocketIOClient
                     payload.put("passphrase", plugin.getPartyManager().getCurrentPartyPassphrase());
                     payload.put("name", plugin.getClient().getLocalPlayer().getName());
                     payload.put("world", plugin.getClient().getWorld());
-                    plugin.getWebSocketClient().send("client_state_update", payload.toString());
+                    plugin.getSocketIoClient().send("client_state_update", payload.toString());
                 }
             }
-        }, 0, 5000); // Delay of 0 ms, repeat every 5000 ms (5 seconds)
+        }, 0, 5000);
     }
 
 
 
 
 
-    public void sendLeaveParty(String passphrase, String rsn) {
-        JSONObject payload = new JSONObject();
-        payload.put("passphrase", passphrase);
-        payload.put("rsn", rsn);
-
-        socket.emit("leave-party", payload);
-        System.out.println("Sent leave-party event: " + payload);
-    }
-
-    public void sendUpdateParty(String payload) {
-        socket.emit("party_update", payload);
-        System.out.println("Sent party_update event: " + payload);
-    }
 
     public boolean isOpen() {
         return socket.connected();
