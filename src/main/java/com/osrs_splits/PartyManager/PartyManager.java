@@ -85,18 +85,6 @@ public class PartyManager
     }
 
 
-    private void disbandParty()
-    {
-        System.out.println("Local party with passphrase " + passphrase + " is disbanded.");
-        if (passphrase != null)
-        {
-            // notify server
-            plugin.getSocketIoClient().sendDisbandParty(passphrase);
-        }
-        this.passphrase = null;
-        this.leader = null;
-        members.clear();
-    }
 
     public void updatePlayerData(String playerName, int newWorld)
     {
@@ -164,16 +152,6 @@ public class PartyManager
     }
 
 
-    // no local verification by default
-    public PlayerVerificationStatus getCachedVerification(String playerName)
-    {
-        return verificationCache.get(playerName);
-    }
-
-    public void cacheVerification(String playerName, PlayerVerificationStatus status)
-    {
-        verificationCache.put(playerName, status);
-    }
 
     public void setLeader(String leader)
     {
