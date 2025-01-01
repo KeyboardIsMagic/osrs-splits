@@ -17,20 +17,20 @@ import org.json.JSONObject;
 
 import javax.imageio.ImageIO;
 import javax.swing.*;
+import javax.swing.Timer;
 import javax.swing.border.EmptyBorder;
 import java.awt.*;
 import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.IOException;
+import java.net.URI;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Map;
-import java.util.Objects;
+import java.util.*;
+import java.util.List;
 
 public class OsrsSplitPluginPanel extends PluginPanel
 {
@@ -40,6 +40,10 @@ public class OsrsSplitPluginPanel extends PluginPanel
     private final JButton joinPartyButton = new JButton("Join Party");
     @Getter
     private final JButton leavePartyButton = new JButton("Leave Party");
+    @Getter
+    private final JButton joinDiscordButton = new JButton("Join Discord");
+    @Getter
+    private final JButton joinDiscordText = new JButton("<html>Join our discord to get verified<br>discord.gg/osrssplits</html>");
     @Getter
     private final JLabel passphraseLabel = new JLabel("Passphrase: N/A");
     @Getter
@@ -67,13 +71,29 @@ public class OsrsSplitPluginPanel extends PluginPanel
         GridBagConstraints gbc = new GridBagConstraints();
         gbc.insets = new Insets(5, 5, 5, 5);
 
+        JLabel joinDiscordText = new JLabel("Join our Discord to get verified:");
+        JButton joinDiscordButton = createImageButton("/discord.png");
+
+        joinDiscordButton.addActionListener(e -> joinDiscord());
+
+        JPanel discordPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 0));
+        discordPanel.add(joinDiscordText).setLocation(0,0); // Text on the left
+        discordPanel.add(joinDiscordButton).setLocation(1,0); // Button with logo on the right
+
+        // Add Discord Panel to Main Panel
+        gbc.gridx = 0; // Column 0
+        gbc.gridy = 0; // Row 0
+        gbc.gridwidth = 2; // Span 1 column
+        add(discordPanel, gbc);
+
         JPanel partyButtonsPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 10, 0));
         partyButtonsPanel.add(createPartyButton);
         partyButtonsPanel.add(joinPartyButton);
 
         gbc.gridx = 0;
-        gbc.gridy = 0;
+        gbc.gridy = 1;
         gbc.gridwidth = 2;
+
         add(partyButtonsPanel, gbc);
 
         JPanel leavePanel = new JPanel(new BorderLayout());
@@ -85,24 +105,24 @@ public class OsrsSplitPluginPanel extends PluginPanel
         leavePanel.add(passphraseLabel, BorderLayout.SOUTH);
 
         gbc.gridx = 0;
-        gbc.gridy = 2;
+        gbc.gridy = 1;
         gbc.gridwidth = 2;
         add(statusLabel, gbc);
         statusLabel.setVisible(false);
 
         gbc.gridx = 0;
-        gbc.gridy = 1;
+        gbc.gridy = 2;
         gbc.gridwidth = 2;
         gbc.anchor = GridBagConstraints.CENTER;
         add(leavePanel, gbc);
 
         memberListPanel.setLayout(new BoxLayout(memberListPanel, BoxLayout.Y_AXIS));
         gbc.gridx = 0;
-        gbc.gridy = 2;
+        gbc.gridy = 3;
         gbc.gridwidth = 2;
         add(memberListPanel, gbc);
 
-        gbc.gridy = 3;
+        gbc.gridy = 4;
         add(screenshotButton, gbc);
 
         leavePartyButton.setVisible(false);
@@ -113,10 +133,24 @@ public class OsrsSplitPluginPanel extends PluginPanel
         joinPartyButton.addActionListener(e -> joinParty());
         leavePartyButton.addActionListener(e -> leaveParty());
 
+
         screenshotButton.addActionListener(e -> {
             screenshotButton.setEnabled(false);
             sendChatMessages(() -> attemptScreenshot(() -> screenshotButton.setEnabled(true)));
         });
+    }
+
+    private JButton createImageButton(String imagePath) {
+        // Load the image
+        ImageIcon icon = new ImageIcon(getClass().getResource(imagePath));
+        JButton button = new JButton(icon);
+
+        // Remove button border and focus to make it look like a plain image
+        button.setBorderPainted(false);
+        button.setFocusPainted(false);
+        button.setContentAreaFilled(false);
+
+        return button;
     }
 
     private void createParty()
@@ -243,6 +277,22 @@ public class OsrsSplitPluginPanel extends PluginPanel
             }
         };
         worker.execute();
+    }
+
+    private void joinDiscord() {
+        try {
+            Desktop desktop =  Desktop.getDesktop();
+            if (desktop.isSupported(Desktop.Action.BROWSE)) {
+                desktop.browse(new URI("https://discord.gg/osrssplits"));
+            } else {
+                // Fallback in case browsing is not supported
+                JOptionPane.showMessageDialog(null, "Cannot open the link. Please visit https://discord.gg/osrssplits manually.");
+            }
+        } catch (Exception ex) {
+            ex.printStackTrace();
+            // Error dialog in case something goes wrong
+            JOptionPane.showMessageDialog(null, "An error occurred while trying to open the Discord link.");
+        }
     }
 
 
@@ -489,7 +539,7 @@ public class OsrsSplitPluginPanel extends PluginPanel
 
         chatMessageManager.queue(QueuedMessage.builder()
                 .type(ChatMessageType.GAMEMESSAGE)
-                .runeLiteFormattedMessage("<col=ff0000>*** Nex Splits Kodai ***</col>")
+                .runeLiteFormattedMessage("<col=ff0000>*** OSRS Splits - The Kodai***</col>")
                 .build());
 
         plugin.getPartyManager().getMembers().forEach((playerName, playerInfo) -> {
@@ -652,7 +702,28 @@ public class OsrsSplitPluginPanel extends PluginPanel
     private void uploadToDiscord(File screenshotFile)
     {
         System.out.println("Uploading " + screenshotFile.getName() + " to Discord...");
-        // No-op in example
+        Map<String, PlayerInfo> members = plugin.getPartyManager().getMembers();
+        StringBuilder confirmedNames = new StringBuilder();
+        for (PlayerInfo p : members.values()) {
+            String playerInfo = p.getName() + " - Confirmed Split: " + p.isConfirmedSplit() + "\n";
+            confirmedNames.append(playerInfo);
+
+            // Print the player's information
+            System.out.print(playerInfo);
+        }
+        try {
+            HttpUtil.sendPartyUpdate(
+                    "http://127.0.0.1:8000/on-confirm/",
+                    confirmedNames.toString(),
+                    plugin.getPartyManager().getLeader(),
+                    screenshotFile
+            );
+        } catch (Exception e) {
+            // Handle potential exceptions from HttpUtil
+            System.err.println("Failed to send party update: " + e.getMessage());
+            e.printStackTrace();
+        }
+
     }
 
 
@@ -700,7 +771,7 @@ public class OsrsSplitPluginPanel extends PluginPanel
                             BufferedImage screenshot = captureScreenshot();
                             File screenshotFile = saveScreenshot(screenshot);
 
-                            java.util.List<String> partyList = new ArrayList<>(plugin.getPartyManager().getMembers().keySet());
+                            List<String> partyList = new ArrayList<>(plugin.getPartyManager().getMembers().keySet());
 
                             // Get leader of party
                             String leader = plugin.getPartyManager().getLeader();

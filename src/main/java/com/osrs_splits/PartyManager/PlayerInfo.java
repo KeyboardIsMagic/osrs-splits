@@ -12,6 +12,7 @@ public class PlayerInfo {
     private int rank;
     @Setter
     private boolean verified;
+    @Getter
     @Setter
     private boolean confirmedSplit;
 
@@ -22,6 +23,7 @@ public class PlayerInfo {
         this.verified = verified;
         this.confirmedSplit = confirmedSplit;
     }
+
 }
 
 
