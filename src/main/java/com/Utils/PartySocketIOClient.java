@@ -220,7 +220,8 @@ public class PartySocketIOClient
 
     private void processPartyUpdate(JSONObject json)
     {
-        SwingUtilities.invokeLater(() -> {
+        SwingUtilities.invokeLater(() ->
+        {
             try
             {
                 String action = json.optString("action", "");
@@ -228,12 +229,8 @@ public class PartySocketIOClient
                 String leader = json.optString("leader", null);
                 JSONArray membersArray = json.optJSONArray("members");
 
-                String localPassphrase = plugin.getPartyManager().getCurrentPartyPassphrase();
-                if (!passphrase.equals(localPassphrase))
-                {
-                    System.out.println("Ignoring update for mismatched passphrase: " + passphrase);
-                    return;
-                }
+                // Now we DO set the local passphrase to accept this data
+                plugin.getPartyManager().setCurrentPartyPassphrase(passphrase);
 
                 if ("party_disband".equals(action))
                 {
@@ -312,7 +309,7 @@ public class PartySocketIOClient
                     return;
                 }
 
-                // normal update
+                // normal update => create or update the local membership
                 plugin.getPartyManager().updateCurrentParty(passphrase, updatedMembers);
                 plugin.getPartyManager().setLeader(leader);
 
@@ -320,6 +317,11 @@ public class PartySocketIOClient
                         + " with " + updatedMembers.size() + " members.");
                 System.out.println("Leader updated to: " + leader);
 
+                // Hide “Loading…” text, if any
+                plugin.getPanel().getStatusLabel().setText("");
+                plugin.getPanel().getStatusLabel().setVisible(false);
+
+                // Show passphrase label & update UI
                 plugin.getPanel().updatePassphraseLabel(passphrase);
                 plugin.getPanel().getPassphraseLabel().setVisible(true);
 
@@ -332,126 +334,6 @@ public class PartySocketIOClient
         });
     }
 
-
-
-
-    public void fetchBatchVerification(Set<String> rsns, String apiKey)
-    {
-        if (apiKey == null || apiKey.isEmpty()) {
-            System.out.println("API key is missing. Cannot verify RSNs.");
-            return;
-        }
-
-        JSONObject payload = new JSONObject();
-        payload.put("apiKey", apiKey);
-        payload.put("rsns", new JSONArray(rsns));
-
-        try {
-            String response = HttpUtil.postRequest("https://osrssplits.xyz/verify-batch", payload.toString());
-            JSONObject jsonResponse = new JSONObject(response);
-
-            if (jsonResponse.optBoolean("verified", false)) {
-                JSONArray rsnData = jsonResponse.optJSONArray("rsnData");
-                if (rsnData != null) {
-                    for (int i = 0; i < rsnData.length(); i++) {
-                        JSONObject rsnObject = rsnData.optJSONObject(i);
-                        if (rsnObject != null && rsnObject.has("name")) {
-                            String name = rsnObject.optString("name", null);
-                            int rank = rsnObject.optInt("rank", -1);
-                            boolean verified = rsnObject.optBoolean("verified", false);
-
-                            if (name != null) {
-                                // check if we have a record for that user:
-                                PlayerInfo existing = plugin.getPartyManager().getMembers().get(name);
-
-                                if (existing != null) {
-                                    // Keep existing world, just update rank & verified
-                                    existing.setRank(rank);
-                                    existing.setVerified(verified);
-                                }
-                                else {
-                                    // if the local user, store the real local world
-                                    int realWorld = -1;
-                                    if (plugin.getClient().getLocalPlayer() != null
-                                            && name.equalsIgnoreCase(plugin.getClient().getLocalPlayer().getName()))
-                                    {
-                                        realWorld = plugin.getClient().getWorld();
-                                    }
-
-                                    // Create new record, using either the realWorld or -1 as fallback
-                                    PlayerInfo newInfo = new PlayerInfo(name, realWorld, rank, verified, false);
-                                    plugin.getPartyManager().addMember(newInfo);
-                                }
-                            } else {
-                                System.err.println("Invalid RSN data: missing or null name.");
-                            }
-                        } else {
-                            System.err.println("Invalid RSN object: " + rsnObject);
-                        }
-                    }
-
-                    // Update UI
-                    plugin.getPanel().updatePartyMembers();
-                } else {
-                    System.err.println("No rsnData array in batch verification response.");
-                }
-            } else {
-                System.err.println("Batch verification failed or unverified.");
-            }
-
-            // Immediately update UI
-            plugin.getPanel().updatePartyMembers();
-        }
-        catch (Exception e) {
-            e.printStackTrace();
-            System.err.println("Failed to fetch batch verification: " + e.getMessage());
-        }
-    }
-
-
-
-
-
-
-    public void emitClientState() {
-        Timer timer = new Timer();
-        timer.scheduleAtFixedRate(new TimerTask() {
-            @Override
-            public void run() {
-                if (plugin.getPartyManager().isInParty(plugin.getClient().getLocalPlayer().getName())) {
-                    JSONObject payload = new JSONObject();
-                    payload.put("passphrase", plugin.getPartyManager().getCurrentPartyPassphrase());
-                    payload.put("name", plugin.getClient().getLocalPlayer().getName());
-                    payload.put("world", plugin.getClient().getWorld());
-                    plugin.getSocketIoClient().send("client_state_update", payload.toString());
-                }
-            }
-        }, 0, 5000);
-    }
-
-
-
-
-
-
-    public boolean isOpen() {
-        return socket.connected();
-    }
-
-    public void reconnect() {
-        if (!socket.connected()) {
-            socket.connect();
-            System.out.println("Reconnecting to Socket.IO server...");
-            if (plugin.getPartyManager().getCurrentPartyPassphrase() != null) {
-                sendJoinParty(
-                        plugin.getPartyManager().getCurrentPartyPassphrase(),
-                        plugin.getClient().getLocalPlayer().getName(),
-                        plugin.getClient().getWorld(), // Add the current world
-                        plugin.getConfig().apiKey()    // Add the API key
-                );
-            }
-        }
-    }
 
 
 

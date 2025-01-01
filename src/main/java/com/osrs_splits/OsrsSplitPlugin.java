@@ -147,30 +147,27 @@ public class OsrsSplitPlugin extends Plugin
 	public void onWorldChanged(WorldChanged event)
 	{
 		int newWorld = client.getWorld();
+		//System.out.println("DEBUG: onWorldChanged fired => newWorld = " + newWorld);
+
 		if (newWorld < 1)
 		{
 			System.out.println("Skipping world update because newWorld = " + newWorld);
 			return;
 		}
 
-		SwingWorker<Void, Void> worker = new SwingWorker<>()
-		{
-			@Override
-			protected Void doInBackground()
-			{
-				String playerName = client.getLocalPlayer().getName();
-				partyManager.updatePlayerData(playerName, newWorld);
-				return null;
-			}
 
-			@Override
-			protected void done()
-			{
-				panel.updatePartyMembers();
-			}
-		};
-		worker.execute();
+		String localPlayer = client.getLocalPlayer().getName();
+		if (!partyManager.isInParty(localPlayer))
+		{
+			//System.out.println("Not in a party, so skipping world update for " + localPlayer);
+			return;
+		}
+
+		// If we’re in a party => push new world to PartyManager
+		partyManager.updatePlayerData(localPlayer, newWorld);
+		//System.out.println("Updated " + localPlayer + " to newWorld=" + newWorld + "; Syncing to server...");
 	}
+
 
 	public static void saveApiKeyToFile(String apiKey)
 	{

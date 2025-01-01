@@ -84,26 +84,6 @@ public class PartyManager
         System.out.println("Updated local party: " + passphrase + " with " + newMembers.size() + " members.");
     }
 
-    public void leaveParty(String playerName)
-    {
-        if (!members.containsKey(playerName))
-        {
-            System.out.println(playerName + " is not in the party. Nothing to remove locally.");
-            return;
-        }
-        members.remove(playerName);
-        System.out.println(playerName + " has left the local party.");
-
-        if (members.isEmpty())
-        {
-            disbandParty();
-        }
-        else
-        {
-            // inform server
-            plugin.getSocketIoClient().sendPartyUpdate(passphrase, members);
-        }
-    }
 
     private void disbandParty()
     {
@@ -134,16 +114,6 @@ public class PartyManager
         return members.containsKey(playerName);
     }
 
-    public void toggleSplitConfirmation(String playerName)
-    {
-        PlayerInfo p = members.get(playerName);
-        if (p != null)
-        {
-            p.setConfirmedSplit(!p.isConfirmedSplit());
-            System.out.println(playerName + " toggled confirmSplit to " + p.isConfirmedSplit());
-            synchronizePartyWithRedis();
-        }
-    }
 
     public boolean allPlayersConfirmedAndSameWorld()
     {
@@ -162,36 +132,12 @@ public class PartyManager
         System.out.println("All members have been cleared from the party.");
     }
 
-    public void addMember(PlayerInfo p)
-    {
-        if (p == null || p.getName() == null)
-        {
-            System.err.println("Warning: Attempted to add null or invalid member.");
-            return;
-        }
-        members.put(p.getName(), p);
-        System.out.println("Added member: " + p.getName());
-    }
 
-    public void setMembers(Map<String, PlayerInfo> updated)
-    {
-        if (updated == null)
-        {
-            System.out.println("No members to set.");
-            return;
-        }
-        members.clear();
-        members.putAll(updated);
-        System.out.println("Local members replaced. New size: " + updated.size());
-    }
 
     public void synchronizePartyWithRedis()
     {
-        if (passphrase == null || passphrase.isEmpty())
-        {
-            return;
-        }
 
+        System.out.println("synchronizePartyWithRedis => passphrase=" + passphrase);
         // Build full party data
         JSONObject payload = new JSONObject();
         payload.put("passphrase", passphrase);
@@ -200,6 +146,7 @@ public class PartyManager
         JSONArray arr = new JSONArray();
         for (PlayerInfo m : members.values())
         {
+            System.out.println(" - " + m.getName() + " world=" + m.getWorld() + " rank=" + m.getRank());
             JSONObject o = new JSONObject();
             o.put("name", m.getName());
             o.put("world", m.getWorld());

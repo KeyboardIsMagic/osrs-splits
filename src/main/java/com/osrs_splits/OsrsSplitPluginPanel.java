@@ -12,7 +12,6 @@ import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.events.NpcLootReceived;
 import net.runelite.client.game.ItemStack;
 import net.runelite.client.ui.PluginPanel;
-import org.json.JSONArray;
 import org.json.JSONObject;
 
 import javax.imageio.ImageIO;
@@ -51,8 +50,6 @@ public class OsrsSplitPluginPanel extends PluginPanel
     private final JPanel memberListPanel = new JPanel();
     @Getter
     private final JButton screenshotButton = new JButton("Screenshot and Upload");
-    private final JTextField apiKeyField = new JPasswordField(20);
-    private final JButton saveApiKeyButton = new JButton("Save");
     private Instant lastScreenshotTime = Instant.EPOCH;
 
     private final OsrsSplitPlugin plugin;
@@ -406,15 +403,28 @@ public class OsrsSplitPluginPanel extends PluginPanel
                         partyLeader != null &&
                         partyLeader.equalsIgnoreCase(localPlayer);
 
+                boolean allConfirmedAndSameWorld = plugin.getPartyManager().allPlayersConfirmedAndSameWorld();
+
                 if (isLeader)
                 {
-                    screenshotButton.setEnabled(true);
-                    screenshotButton.setToolTipText("All players must be in the same world & confirmed split before screenshotting.");
+                    if (allConfirmedAndSameWorld)
+                    {
+                        // Leader + everyone in same world + everyone confirmed
+                        screenshotButton.setEnabled(true);
+                        screenshotButton.setToolTipText("All players confirmed and on the same world. You can screenshot now!");
+                    }
+                    else
+                    {
+                        // Leader but not everyone has confirmed or same world
+                        screenshotButton.setEnabled(false);
+                        screenshotButton.setToolTipText("All players must confirm and be on the same world to enable screenshot.");
+                    }
                 }
                 else
                 {
+                    // Non-leader
                     screenshotButton.setEnabled(false);
-                    screenshotButton.setToolTipText("Screenshots can only be sent by the leader (Orange).");
+                    screenshotButton.setToolTipText("Only the leader can take screenshots. (Orange).");
                 }
 
                 for (PlayerInfo p : members.values())
@@ -492,9 +502,20 @@ public class OsrsSplitPluginPanel extends PluginPanel
                 .runeLiteFormattedMessage("<col=ff0000>*** Nex Splits Kodai ***</col>")
                 .build());
 
-        plugin.getPartyManager().getMembers().forEach((playerName, playerInfo) -> {
+        // For each member => build a message based on if they're confirmed
+        plugin.getPartyManager().getMembers().forEach((playerName, playerInfo) ->
+        {
             playerName = playerName.trim();
-            String message = playerName + " Confirm split World " + playerInfo.getWorld();
+
+            String message;
+            if (playerInfo.isConfirmedSplit())
+            {
+                message = playerName + " is Confirmed in World " + playerInfo.getWorld();
+            }
+            else
+            {
+                message = playerName + " has NOT confirmed split in World " + playerInfo.getWorld();
+            }
 
             chatMessageManager.queue(QueuedMessage.builder()
                     .type(ChatMessageType.PUBLICCHAT)
@@ -507,42 +528,7 @@ public class OsrsSplitPluginPanel extends PluginPanel
         delayTimer.start();
     }
 
-    public void sendPartyUpdate()
-    {
-        if (plugin.getSocketIoClient() == null || !plugin.getSocketIoClient().isOpen())
-        {
-            System.err.println("WebSocket is not connected. Attempting to reconnect...");
-            try {
-                plugin.getSocketIoClient().reconnect();
-                System.out.println("WebSocket reconnected successfully.");
-            }
-            catch (Exception e) {
-                e.printStackTrace();
-                System.err.println("WebSocket reconnection failed: " + e.getMessage());
-                return;
-            }
-        }
 
-        JSONObject payload = new JSONObject();
-        payload.put("action", "party_update");
-        payload.put("passphrase", plugin.getPartyManager().getLeader());
-
-        JSONArray memberArray = new JSONArray();
-        for (PlayerInfo p : plugin.getPartyManager().getMembers().values())
-        {
-            JSONObject o = new JSONObject();
-            o.put("name", p.getName());
-            o.put("world", p.getWorld());
-            o.put("rank", p.getRank());
-            o.put("verified", p.isVerified());
-            o.put("confirmedSplit", p.isConfirmedSplit());
-            memberArray.put(o);
-        }
-        payload.put("members", memberArray);
-
-        plugin.getSocketIoClient().send("party_update", payload.toString());
-        System.out.println("Party update payload sent successfully: " + payload);
-    }
 
     private JButton createConfirmSplitButton(String playerName)
     {
@@ -651,9 +637,38 @@ public class OsrsSplitPluginPanel extends PluginPanel
 
     private void uploadToDiscord(File screenshotFile)
     {
-        System.out.println("Uploading " + screenshotFile.getName() + " to Discord...");
-        // No-op in example
+        try
+        {
+            // get list of current party members
+            java.util.List<String> partyList = new java.util.ArrayList<>(plugin.getPartyManager().getMembers().keySet());
+
+            // grab party leader
+            String leader = plugin.getPartyManager().getLeader();
+            if (leader == null || leader.isEmpty())
+            {
+                leader = "Unknown";
+            }
+
+            String itemName = "Confirmation Screenshot";
+
+            HttpUtil.sendUniqueDiscord(
+                    "http://127.0.0.1:8000/on-party-screenshot/",    // FIXME
+                    partyList,
+                    leader,
+                    itemName,
+                    screenshotFile
+            );
+
+            System.out.println("Screenshot posted to Discord via on-drop endpoint.");
+
+        }
+        catch (Exception e)
+        {
+            e.printStackTrace();
+            System.out.println("Failed to post screenshot to Discord: " + e.getMessage());
+        }
     }
+
 
 
     // Get name for unique item (Could do this on API Side)
