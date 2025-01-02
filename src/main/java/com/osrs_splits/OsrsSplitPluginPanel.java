@@ -729,7 +729,7 @@ public class OsrsSplitPluginPanel extends PluginPanel
                             String leader = plugin.getPartyManager().getLeader();
 
                             // API POST Call to post to discord
-                            HttpUtil.sendUniqueDiscord("http://127.0.0.1:8000/on-drop/", partyList, leader, getUniqueItem(itemStack.getId()), screenshotFile);
+                            HttpUtil.sendUniqueDiscord("http://127.0.0.1:8000/on-drop/", partyList, leader, getUniqueItem(itemStack.getId()), screenshotFile); // FIXME
 
                             SwingUtilities.invokeLater(() ->
                                     showScreenshotNotification("Screenshot taken and uploaded to Discord!")
