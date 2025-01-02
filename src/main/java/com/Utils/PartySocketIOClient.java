@@ -229,10 +229,10 @@ public class PartySocketIOClient
                 String leader = json.optString("leader", null);
                 JSONArray membersArray = json.optJSONArray("members");
 
-                // --- 1) Grab our local passphrase first
+                //  Grab local passphrase first
                 String localPassphrase = plugin.getPartyManager().getCurrentPartyPassphrase();
 
-                // --- 2) If the incoming passphrase doesn't match our local passphrase, ignore
+                // If incoming passphrase doesn't match our local passphrase, ignore
                 if (!passphrase.equals(localPassphrase))
                 {
                     System.out.println(
