@@ -374,6 +374,7 @@ public class OsrsSplitPluginPanel extends PluginPanel
     {
         SwingUtilities.invokeLater(() ->
         {
+            // Clear out old UI to avoid stale data
             memberListPanel.removeAll();
 
             String currentPassphrase = plugin.getPartyManager().getCurrentPartyPassphrase();
@@ -381,6 +382,7 @@ public class OsrsSplitPluginPanel extends PluginPanel
 
             if (currentPassphrase == null || members.isEmpty())
             {
+                // No active party => show “No active party” and remove stale cards
                 statusLabel.setText("No active party.");
                 statusLabel.setVisible(true);
 
@@ -399,9 +401,9 @@ public class OsrsSplitPluginPanel extends PluginPanel
                         ? plugin.getClient().getLocalPlayer().getName()
                         : null;
                 String partyLeader = plugin.getPartyManager().getLeader();
-                boolean isLeader = localPlayer != null &&
-                        partyLeader != null &&
-                        partyLeader.equalsIgnoreCase(localPlayer);
+                boolean isLeader = (localPlayer != null
+                        && partyLeader != null
+                        && partyLeader.equalsIgnoreCase(localPlayer));
 
                 boolean allConfirmedAndSameWorld = plugin.getPartyManager().allPlayersConfirmedAndSameWorld();
 
@@ -411,13 +413,16 @@ public class OsrsSplitPluginPanel extends PluginPanel
                     {
                         // Leader + everyone in same world + everyone confirmed
                         screenshotButton.setEnabled(true);
-                        screenshotButton.setToolTipText("All players confirmed and on the same world. You can screenshot now!");
+                        screenshotButton.setToolTipText(
+                                "All players confirmed and on the same world. You can screenshot now!"
+                        );
                     }
                     else
                     {
-                        // Leader but not everyone has confirmed or same world
                         screenshotButton.setEnabled(false);
-                        screenshotButton.setToolTipText("All players must confirm and be on the same world to enable screenshot.");
+                        screenshotButton.setToolTipText(
+                                "All players must confirm and be on the same world to enable screenshot."
+                        );
                     }
                 }
                 else
@@ -427,6 +432,7 @@ public class OsrsSplitPluginPanel extends PluginPanel
                     screenshotButton.setToolTipText("Only the leader can take screenshots. (Orange).");
                 }
 
+                // Build and add each player's card
                 for (PlayerInfo p : members.values())
                 {
                     JPanel playerCard = createPlayerCard(
@@ -442,10 +448,12 @@ public class OsrsSplitPluginPanel extends PluginPanel
                 }
             }
 
+            // Revalidate and repaint the panel to ensure the UI updates
             memberListPanel.revalidate();
             memberListPanel.repaint();
         });
     }
+
 
     private String getRankIconPath(int rank)
     {

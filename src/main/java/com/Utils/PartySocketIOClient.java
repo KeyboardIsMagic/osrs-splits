@@ -229,9 +229,21 @@ public class PartySocketIOClient
                 String leader = json.optString("leader", null);
                 JSONArray membersArray = json.optJSONArray("members");
 
-                // Now we DO set the local passphrase to accept this data
-                plugin.getPartyManager().setCurrentPartyPassphrase(passphrase);
+                // --- 1) Grab our local passphrase first
+                String localPassphrase = plugin.getPartyManager().getCurrentPartyPassphrase();
 
+                // --- 2) If the incoming passphrase doesn't match our local passphrase, ignore
+                if (!passphrase.equals(localPassphrase))
+                {
+                    System.out.println(
+                            "Ignoring update for mismatched passphrase: "
+                                    + passphrase
+                                    + " (local is " + localPassphrase + ")"
+                    );
+                    return;
+                }
+
+                // If "party_disband" => we disband the local party
                 if ("party_disband".equals(action))
                 {
                     System.out.println("Received party_disband for " + passphrase);
@@ -250,7 +262,7 @@ public class PartySocketIOClient
                     return;
                 }
 
-                // Build updated members
+                // --- Build updated members
                 Map<String, PlayerInfo> updatedMembers = new HashMap<>();
                 if (membersArray != null)
                 {
@@ -288,12 +300,15 @@ public class PartySocketIOClient
                 }
 
                 // If local user not in updated => parted ways
-                String localPlayer = plugin.getClient().getLocalPlayer() != null
+                String localPlayer = (plugin.getClient().getLocalPlayer() != null)
                         ? plugin.getClient().getLocalPlayer().getName()
                         : null;
+
                 if (localPlayer != null && !updatedMembers.containsKey(localPlayer))
                 {
-                    System.out.println("Local player " + localPlayer + " is not in updated list. Clearing local data...");
+                    System.out.println(
+                            "Local player " + localPlayer + " is not in updated list. Clearing local data..."
+                    );
                     plugin.getPartyManager().clearMembers();
                     plugin.getPartyManager().setCurrentPartyPassphrase(null);
                     plugin.getPartyManager().setLeader(null);
@@ -333,6 +348,7 @@ public class PartySocketIOClient
             }
         });
     }
+
 
 
 
