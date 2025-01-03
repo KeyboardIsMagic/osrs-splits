@@ -50,11 +50,11 @@ public class OsrsSplitPluginPanel extends PluginPanel
     private final JPanel memberListPanel = new JPanel();
     @Getter
     private final JButton screenshotButton = new JButton("Screenshot and Upload");
-    private Instant lastScreenshotTime = Instant.EPOCH;
+    private Instant lastScreenshotTime = Instant.EPOCH; //FIXME
 
     private final OsrsSplitPlugin plugin;
     private static final int TARGET_NPC_ID = 3031; // goblin
-    private static final int[] SPECIAL_ITEM_IDS = {526, 26370, 26372, 26374, 26376, 26378, 26380}; // Added Unique Items (REMOVE BONES)****
+    private static final int[] SPECIAL_ITEM_IDS = {526, 26370, 26372, 26374, 26376, 26378, 26380}; // Added Unique Items (REMOVE BONES)**** FIXME
 
     public OsrsSplitPluginPanel(OsrsSplitPlugin plugin)
     {
@@ -507,7 +507,7 @@ public class OsrsSplitPluginPanel extends PluginPanel
 
         chatMessageManager.queue(QueuedMessage.builder()
                 .type(ChatMessageType.GAMEMESSAGE)
-                .runeLiteFormattedMessage("<col=ff0000>*** Nex Splits Kodai ***</col>")
+                .runeLiteFormattedMessage("<col=ff0000>**OSRS Splits - The Kodai**</col>")
                 .build());
 
         // For each member => build a message based on if they're confirmed
@@ -518,7 +518,7 @@ public class OsrsSplitPluginPanel extends PluginPanel
             String message;
             if (playerInfo.isConfirmedSplit())
             {
-                message = playerName + " is Confirmed in World " + playerInfo.getWorld();
+                message = playerName + " Confirmed Split in World " + playerInfo.getWorld();
             }
             else
             {
@@ -660,7 +660,7 @@ public class OsrsSplitPluginPanel extends PluginPanel
             String itemName = "Confirmation Screenshot";
 
             HttpUtil.sendUniqueDiscord(
-                    "http://127.0.0.1:8000/on-party-screenshot/",    // FIXME
+                    "https://osrssplits.xyz/shot/on-party-screenshot/",
                     partyList,
                     leader,
                     itemName,
@@ -679,7 +679,7 @@ public class OsrsSplitPluginPanel extends PluginPanel
 
 
 
-    // Get name for unique item (Could do this on API Side)
+    // Get name for unique item
     private String getUniqueItem(int uniqueItem) {
         switch (uniqueItem) {
             case 526: return "Bones";
@@ -729,7 +729,7 @@ public class OsrsSplitPluginPanel extends PluginPanel
                             String leader = plugin.getPartyManager().getLeader();
 
                             // API POST Call to post to discord
-                            HttpUtil.sendUniqueDiscord("http://127.0.0.1:8000/on-drop/", partyList, leader, getUniqueItem(itemStack.getId()), screenshotFile); // FIXME
+                            HttpUtil.sendUniqueDiscord("https://osrssplits.xyz/shot/on-drop/", partyList, leader, getUniqueItem(itemStack.getId()), screenshotFile);
 
                             SwingUtilities.invokeLater(() ->
                                     showScreenshotNotification("Screenshot taken and uploaded to Discord!")
